@@ -1,0 +1,21 @@
+import { useWeb3 } from "@/lib/web3-walletconnect-v2";
+
+export function useWallet() {
+  const { 
+    address, 
+    isConnected, 
+    chainId, 
+    error,
+    connectWallet, 
+    disconnectWallet,
+  } = useWeb3();
+
+  return {
+    address,
+    isConnected,
+    chain: { id: chainId || 84532, name: "Base Sepolia" },
+    error,
+    connectWallet,
+    disconnectWallet,
+  };
+}

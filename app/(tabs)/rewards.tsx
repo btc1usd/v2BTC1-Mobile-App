@@ -1,0 +1,415 @@
+import React, { useState, useEffect } from "react";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Linking, RefreshControl } from "react-native";
+import { ScreenContainer } from "@/components/screen-container";
+import { useWeb3 } from "@/lib/web3-walletconnect-v2";
+import { useDistributionData } from "@/hooks/use-distribution-data-simple";
+import * as Haptics from "expo-haptics";
+import { claimRewards, getTxUrl } from "@/lib/contract-utils";
+import { ethers } from "ethers";
+import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
+import { WalletHeader } from "@/components/wallet-header";
+import { useWallet } from "@/hooks/use-wallet-wc";
+import {
+  fetchUserMerkleProof,
+  fetchUserUnclaimedRewards,
+  fetchCurrentDistribution,
+  markClaimAsClaimed,
+  fetchTotalRewardsEarned,
+  type MerkleClaim,
+} from "@/lib/supabase";
+
+type ClaimStep = "input" | "claiming" | "success" | "error";
+
+export default function RewardsScreen() {
+  const { address, isConnected, chainId, signer, provider } = useWeb3();
+  const { distributionCount, timeUntilDistribution, canDistribute, lastDistributionDate } = useDistributionData();
+  const { disconnectWallet } = useWallet();
+  
+  const [claimingDistributionId, setClaimingDistributionId] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [availableRewards, setAvailableRewards] = useState("0");
+  const [currentDistributionId, setCurrentDistributionId] = useState(0);
+  const [isLoadingRewards, setIsLoadingRewards] = useState(false);
+  const [hasUnclaimedRewards, setHasUnclaimedRewards] = useState(false);
+  const [unclaimedRewardsList, setUnclaimedRewardsList] = useState<MerkleClaim[]>([]);
+  const [totalEarned, setTotalEarned] = useState("0");
+  const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
+  
+  useEffect(() => {
+    const fetchRewards = async () => {
+      if (!provider || !address || chainId !== 84532) {
+        console.log('[Rewards] Skipping fetch - missing:', { provider: !!provider, address, chainId });
+        return;
+      }
+      
+      try {
+        console.log('[Rewards] Starting fetch...');
+        setIsLoadingRewards(true);
+        setLastRefreshTime(Date.now()); // Update timestamp
+        
+        // Fetch current distribution from Supabase
+        const currentDist = await fetchCurrentDistribution();
+        if (currentDist) {
+          setCurrentDistributionId(currentDist.id);
+          console.log('[Rewards] Current distribution:', currentDist.id);
+        }
+        
+        // Fetch unclaimed rewards from Supabase with on-chain verification
+        const unclaimed = await fetchUserUnclaimedRewards(address, provider);
+        console.log('[Rewards] Unclaimed rewards:', unclaimed.length);
+        setUnclaimedRewardsList(unclaimed);
+        setHasUnclaimedRewards(unclaimed.length > 0);
+        
+        // Calculate total available rewards
+        if (unclaimed.length > 0) {
+          const total = unclaimed.reduce((sum, claim) => {
+            return sum + BigInt(claim.amount);
+          }, BigInt(0));
+          // Convert from 8 decimals to display format
+          const totalFormatted = ethers.formatUnits(total, 8);
+          setAvailableRewards(totalFormatted);
+          console.log('[Rewards] Total available:', totalFormatted);
+        } else {
+          setAvailableRewards("0");
+        }
+        
+        // Fetch total earned (claimed rewards)
+        const earned = await fetchTotalRewardsEarned(address);
+        const earnedFormatted = ethers.formatUnits(earned, 8);
+        setTotalEarned(earnedFormatted);
+        console.log('[Rewards] Total earned:', earnedFormatted);
+        
+      } catch (error: any) {
+        console.error('[Rewards] Error fetching rewards:', error.message || error);
+        // Fallback to contract if Supabase fails
+        try {
+          const distributorContract = new ethers.Contract(
+            CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR,
+            ABIS.MERKLE_DISTRIBUTOR,
+            provider
+          );
+          const distId = await distributorContract.currentDistributionId();
+          setCurrentDistributionId(Number(distId));
+        } catch (contractError: any) {
+          console.error('[Rewards] Contract fallback failed:', contractError.message);
+        }
+      } finally {
+        setIsLoadingRewards(false);
+        console.log('[Rewards] Fetch complete');
+      }
+    };
+    
+    fetchRewards();
+    const interval = setInterval(fetchRewards, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, [provider, address, chainId]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLastRefreshTime(Date.now()); // Force cache bust
+    
+    // Refetch rewards data from Supabase with on-chain verification
+    if (address && chainId === 84532 && provider) {
+      try {
+        const [currentDist, unclaimed, earned] = await Promise.all([
+          fetchCurrentDistribution(),
+          fetchUserUnclaimedRewards(address, provider),
+          fetchTotalRewardsEarned(address),
+        ]);
+        
+        if (currentDist) {
+          setCurrentDistributionId(currentDist.id);
+        }
+        setUnclaimedRewardsList(unclaimed);
+        setHasUnclaimedRewards(unclaimed.length > 0);
+        
+        if (unclaimed.length > 0) {
+          const total = unclaimed.reduce((sum, claim) => {
+            return sum + BigInt(claim.amount);
+          }, BigInt(0));
+          setAvailableRewards(ethers.formatUnits(total, 8));
+        } else {
+          setAvailableRewards("0");
+        }
+        
+        setTotalEarned(ethers.formatUnits(earned, 8));
+      } catch (error: any) {
+        console.error('Error refreshing rewards:', error.message || error);
+      }
+    }
+    
+    setRefreshing(false);
+  };
+
+  const handleClaim = async (claim: MerkleClaim) => {
+    if (!signer || !address) return;
+    
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setClaimingDistributionId(claim.distribution_id);
+    
+    try {
+      console.log('[Claim] Starting claim:', {
+        distributionId: claim.distribution_id,
+        index: claim.index,
+        amount: claim.amount,
+        proofLength: claim.proof.length,
+      });
+      
+      // Call claim with real merkle proof from Supabase
+      const result = await claimRewards(
+        claim.distribution_id,
+        claim.index,
+        address,
+        ethers.formatUnits(claim.amount, 8), // Convert to human-readable format
+        claim.proof,
+        signer
+      );
+      
+      if (!result.success) {
+        throw new Error(result.error || "Claim failed");
+      }
+
+      console.log('[Claim] Success! TxHash:', result.txHash);
+
+      // IMMEDIATE: Remove claimed reward from UI (optimistic update)
+      console.log('[Claim] Removing claimed reward from UI...');
+      setUnclaimedRewardsList(prev => 
+        prev.filter(c => c.distribution_id !== claim.distribution_id)
+      );
+      
+      // Recalculate available rewards
+      const newTotal = unclaimedRewardsList
+        .filter(c => c.distribution_id !== claim.distribution_id)
+        .reduce((sum, c) => sum + BigInt(c.amount), BigInt(0));
+      setAvailableRewards(ethers.formatUnits(newTotal, 8));
+
+      // Mark as claimed in Supabase for faster future fetches
+      console.log('[Claim] Updating Supabase...');
+      const marked = await markClaimAsClaimed(claim.distribution_id, address);
+      if (marked) {
+        console.log('[Claim] Supabase updated successfully');
+      } else {
+        console.warn('[Claim] Failed to update Supabase, but claim succeeded on-chain');
+      }
+
+      // Success haptic feedback
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      // Force refresh with cache bust after 2 seconds (verify on-chain)
+      console.log('[Claim] Scheduling verification refresh...');
+      setTimeout(async () => {
+        setLastRefreshTime(Date.now()); // Force cache bust
+        await onRefresh();
+      }, 2000);
+      
+    } catch (err: any) {
+      console.error('[Claim] Error:', err);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      
+      // If error after optimistic update, revert by refreshing
+      if (err.message?.includes('already claimed')) {
+        console.log('[Claim] Already claimed - forcing refresh to sync state');
+        setLastRefreshTime(Date.now());
+        await onRefresh();
+      }
+      
+      alert(`Claim failed: ${err.message || "Unknown error"}`);
+    } finally {
+      setClaimingDistributionId(null);
+    }
+  };
+
+  // Pending rewards list from Supabase
+  const pendingRewards = unclaimedRewardsList.map((claim) => ({
+    distributionId: claim.distribution_id,
+    amount: ethers.formatUnits(claim.amount, 8),
+    date: new Date(claim.created_at).toISOString().split('T')[0],
+    index: claim.index,
+  }));
+
+  if (!isConnected) {
+    return (
+      <ScreenContainer className="items-center justify-center p-6">
+        <View className="items-center">
+          <Text className="text-6xl mb-4">🎁</Text>
+          <Text className="text-2xl font-bold text-foreground mb-2">Wallet Required</Text>
+          <Text className="text-base text-muted text-center">
+            Connect your wallet to view and claim your rewards
+          </Text>
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  // Main Rewards Screen
+  return (
+    <ScreenContainer>
+      {/* Uniform Header - Wallet & Network */}
+      <WalletHeader address={address} chainId={chainId} compact onDisconnect={disconnectWallet} />
+      
+      <ScrollView 
+        contentContainerStyle={{ flexGrow: 1 }} 
+        className="px-6 py-6"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* Header */}
+        <View className="mb-8">
+          <Text className="text-3xl font-bold text-foreground mb-2">Weekly Rewards</Text>
+          <Text className="text-base text-muted">
+            Claim your share of protocol surplus distributions
+          </Text>
+        </View>
+
+        {/* Available Rewards Summary */}
+        <View className="bg-gradient-to-br from-success/20 to-success/5 border-2 border-success rounded-3xl p-6 mb-6">
+          <Text className="text-sm text-muted mb-2">Total Available to Claim</Text>
+          {isLoadingRewards ? (
+            <ActivityIndicator size="large" color="#10B981" className="my-4" />
+          ) : (
+            <>
+              <Text className="text-5xl font-bold text-success mb-2">
+                {availableRewards}
+              </Text>
+              <Text className="text-base text-muted mb-2">BTC1</Text>
+              <Text className="text-xs text-muted">
+                {unclaimedRewardsList.length} unclaimed distribution{unclaimedRewardsList.length !== 1 ? 's' : ''}
+              </Text>
+            </>
+          )}
+        </View>
+
+        {/* Distribution Stats */}
+        <View className="bg-surface border-2 border-border rounded-2xl p-5 mb-6">
+          <Text className="text-sm font-semibold text-foreground mb-4">Distribution Stats</Text>
+          
+          <View className="flex-row justify-between mb-3">
+            <Text className="text-sm text-muted">Total Earned</Text>
+            <Text className="text-lg font-bold text-success">{parseFloat(totalEarned).toFixed(4)} BTC1</Text>
+          </View>
+          
+          <View className="flex-row justify-between mb-3">
+            <Text className="text-sm text-muted">Current Distribution</Text>
+            <Text className="text-lg font-bold text-foreground">#{currentDistributionId}</Text>
+          </View>
+          
+          <View className="flex-row justify-between mb-3">
+            <Text className="text-sm text-muted">Total Distributions</Text>
+            <Text className="text-lg font-bold text-foreground">{distributionCount}</Text>
+          </View>
+          
+          <View className="flex-row justify-between mb-3">
+            <Text className="text-sm text-muted">Next Distribution</Text>
+            <View className="items-end">
+              <Text className="text-sm font-bold text-primary">
+                {timeUntilDistribution || "Calculating..."}
+              </Text>
+              {lastDistributionDate && (
+                <Text className="text-xs text-muted mt-0.5">
+                  (7 days from {new Date(lastDistributionDate).toLocaleDateString()})
+                </Text>
+              )}
+            </View>
+          </View>
+          
+          <View className="flex-row justify-between">
+            <Text className="text-sm text-muted">Distribution Status</Text>
+            <Text className={`text-sm font-bold ${canDistribute ? "text-success" : "text-muted"}`}>
+              {canDistribute ? "Ready" : "Pending"}
+            </Text>
+          </View>
+        </View>
+
+        {/* Unclaimed Rewards - Individual Claim Buttons */}
+        <View className="mb-6">
+          <View className="flex-row justify-between items-center mb-3">
+            <Text className="text-lg font-semibold text-foreground">Unclaimed Rewards</Text>
+            <Text className="text-xs text-muted">
+              {new Date(lastRefreshTime).toLocaleTimeString()}
+            </Text>
+          </View>
+          {isLoadingRewards ? (
+            <View className="bg-surface border border-border rounded-xl p-8">
+              <ActivityIndicator size="large" color="#F7931A" />
+            </View>
+          ) : unclaimedRewardsList.length > 0 ? (
+            unclaimedRewardsList.map((claim, index) => {
+              const isClaiming = claimingDistributionId === claim.distribution_id;
+              return (
+                <View 
+                  key={`${claim.distribution_id}-${claim.index}`}
+                  className="bg-surface border border-border rounded-xl p-4 mb-3"
+                >
+                  <View className="flex-row justify-between items-start mb-3">
+                    <View className="flex-1">
+                      <Text className="text-xl font-bold text-foreground">
+                        {ethers.formatUnits(claim.amount, 8)} BTC1
+                      </Text>
+                      <Text className="text-xs text-muted mt-1">
+                        Distribution #{claim.distribution_id}
+                      </Text>
+                      <Text className="text-xs text-muted">
+                        {new Date(claim.created_at).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <View className="bg-success/20 px-3 py-1 rounded-full">
+                      <Text className="text-xs font-bold text-success">Unclaimed</Text>
+                    </View>
+                  </View>
+                  
+                  <TouchableOpacity
+                    onPress={() => handleClaim(claim)}
+                    disabled={isClaiming || claimingDistributionId !== null}
+                    className={`py-3 rounded-xl items-center ${
+                      isClaiming || claimingDistributionId !== null
+                        ? "bg-muted/50"
+                        : "bg-success"
+                    }`}
+                  >
+                    {isClaiming ? (
+                      <View className="flex-row items-center">
+                        <ActivityIndicator size="small" color="#fff" />
+                        <Text className="text-white text-sm font-bold ml-2">
+                          Claiming...
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text className="text-white text-sm font-bold">
+                        Claim {ethers.formatUnits(claim.amount, 8)} BTC1
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })
+          ) : (
+            <View className="bg-surface border border-border rounded-xl p-6">
+              <Text className="text-sm text-muted text-center">✨ No unclaimed rewards</Text>
+              <Text className="text-xs text-muted text-center mt-1">Check back after the next distribution</Text>
+            </View>
+          )}
+        </View>
+
+        {/* How It Works */}
+        <View className="bg-surface border-2 border-border rounded-2xl p-5 mb-6">
+          <Text className="text-sm font-semibold text-foreground mb-3">How It Works</Text>
+          <Text className="text-sm text-muted leading-6">
+            💰 Weekly distributions from protocol surplus{"\n"}
+            📊 Rewards proportional to your BTC1 holdings{"\n"}
+            🎁 90% to holders, 10% to charity{"\n"}
+            ⏰ Claim anytime after distribution
+          </Text>
+        </View>
+
+        {/* Info Notice */}
+        <View className="p-4 bg-primary/10 rounded-xl border border-primary/20">
+          <Text className="text-xs text-muted text-center">
+            ℹ️ Rewards are distributed every Friday at 14:00 UTC when surplus exists
+          </Text>
+        </View>
+      </ScrollView>
+    </ScreenContainer>
+  );
+}
