@@ -350,8 +350,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         setChainId(Number(net.chainId));
         setIsConnected(true);
         
-        // Save connection state flag
+        // Save connection state and preferred wallet for future operations
         await AsyncStorage.setItem("wc_connected", "true");
+        await AsyncStorage.setItem("wc_preferred_wallet", walletId);
+        console.log("✅ Saved preferred wallet:", walletId);
         
         setupEventListeners(provider);
 
