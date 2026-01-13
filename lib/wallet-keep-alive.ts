@@ -22,8 +22,8 @@ let appStateListener: any = null;
 export const KEEP_ALIVE_INTERVAL = 30000; // 30 seconds
 export const SESSION_TIMEOUT = 120000; // 2 minutes
 export const MAX_RETRY_ATTEMPTS = 1;
-export const TRANSACTION_TIMEOUT = 90000; // 90 seconds - more time for confirmation
-export const SIGNATURE_TIMEOUT = 45000; // 45 seconds - reasonable for signing
+export const TRANSACTION_TIMEOUT = 60000; // 60 seconds - optimized for speed
+export const SIGNATURE_TIMEOUT = 30000; // 30 seconds - faster user experience
 export const WALLET_OPEN_DELAY = 0; // 0ms - instant for maximum speed
 
 /**
@@ -37,8 +37,8 @@ export async function withTimeout<T>(
   operationName: string = "operation",
   showWalletReminder: boolean = true
 ): Promise<T> {
-  // Set up reminder timeout (show after 10s of waiting - industry standard)
-  const reminderDelay = 10000;
+  // Reduced reminder delay for faster user feedback (5s instead of 10s)
+  const reminderDelay = 5000;
   let reminderTimeout: ReturnType<typeof setTimeout> | null = null;
   
   if (showWalletReminder && timeoutMs > reminderDelay) {

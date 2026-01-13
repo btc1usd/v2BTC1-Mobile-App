@@ -169,13 +169,13 @@ export async function mintBTC1WithPermit2(
       deadline: deadline,
     };
 
-    // 6. Request Signature (Optimized Flow)
+    // 6. Request Signature (Optimized Flow - Open wallet in background)
     console.log("⚡ Requesting signature...");
-    await openWalletApp('signature');
+    openWalletApp('signature').catch(() => {}); // Fire-and-forget for instant UX
     
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
-      45000,
+      30000, // 30s - faster signature timeout
       "Permit2 signature",
       false
     );
@@ -194,7 +194,7 @@ export async function mintBTC1WithPermit2(
 
     console.log("✅ Transaction sent:", tx.hash);
     
-    const receipt = await withTimeout(() => tx.wait(), 90000, "Transaction confirmation") as ethers.ContractTransactionReceipt;
+    const receipt = await withTimeout(() => tx.wait(), 60000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 60s - faster confirmation
 
     return { success: true, txHash: receipt.hash };
 
@@ -254,13 +254,13 @@ export async function redeemBTC1WithPermit(
       deadline: deadline,
     };
 
-    // 4. Request Signature
+    // 4. Request Signature (Fire-and-forget wallet opening)
     console.log("⚡ Requesting EIP-2612 signature...");
-    await openWalletApp('signature');
+    openWalletApp('signature').catch(() => {}); // Fire-and-forget for instant UX
     
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
-      45000,
+      30000, // 30s - faster signature timeout
       "EIP-2612 signature",
       false
     );
@@ -279,7 +279,7 @@ export async function redeemBTC1WithPermit(
 
     console.log("✅ Redeem sent:", tx.hash);
 
-    const receipt = await withTimeout(() => tx.wait(), 90000, "Transaction confirmation") as ethers.ContractTransactionReceipt;
+    const receipt = await withTimeout(() => tx.wait(), 60000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 60s - faster confirmation
 
     return { success: true, txHash: receipt.hash };
 
