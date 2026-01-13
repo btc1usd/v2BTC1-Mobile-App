@@ -5,11 +5,30 @@ import "react-native-get-random-values";
 if (!__DEV__) {
   // @ts-ignore
   global.pino = { child: () => ({ error: () => {}, warn: () => {}, info: () => {}, debug: () => {} }) };
+  
   const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  
   console.error = (...args: any[]) => {
     const str = JSON.stringify(args);
-    if (str.includes('"level":50') || str.includes('session topic')) return;
+    // Suppress WalletConnect internal errors and session topic errors
+    if (
+      str.includes('"level":50') || 
+      str.includes('session topic') ||
+      str.includes('No matching key') ||
+      str.includes("doesn't exist")
+    ) return;
     originalConsoleError(...args);
+  };
+  
+  console.warn = (...args: any[]) => {
+    const str = JSON.stringify(args);
+    // Suppress session warnings after disconnect
+    if (
+      str.includes('session topic') ||
+      str.includes('No matching key')
+    ) return;
+    originalConsoleWarn(...args);
   };
 }
 
@@ -352,34 +371,57 @@ export function Web3Provider({ children }: { children: ReactNode }) {
      DISCONNECT / CANCEL
   ============================================================ */
   const disconnectWallet = useCallback(async () => {
-    setIsConnected(false); // Optimistic UI update
+    console.log("🔌 Disconnecting wallet...");
+    
+    // Immediately update state to prevent any further operations
+    setIsConnected(false);
     setAddress(null);
     setSigner(null);
+    setWcProvider(null); // Clear provider reference FIRST to prevent async operations
+    connectLockRef.current = false;
     
     try {
         const provider = await getWcProvider();
+        
         if (provider) {
-            // SAFE CLEANUP
+            // Remove all event listeners first
             if (typeof provider.removeAllListeners === 'function') {
                 try { provider.removeAllListeners(); } catch (e) { /* ignore */ }
             }
-            try { await provider.disconnect(); } catch (e) { /* ignore */ }
+            
+            // Disconnect session with timeout (suppress errors)
+            try { 
+                await Promise.race([
+                    provider.disconnect(),
+                    new Promise((resolve) => setTimeout(resolve, 2000)) // 2s timeout
+                ]);
+            } catch (e: any) { 
+                // Expected errors after disconnect - suppress them
+                if (!e.message?.includes('session topic') && !e.message?.includes('No matching key')) {
+                    console.warn("Disconnect warning:", e.message);
+                }
+            }
         }
         
         // Clean storage
         await AsyncStorage.removeItem("wc_connected");
+        await AsyncStorage.removeItem("wc_preferred_wallet");
         
         // Cleanup internal WC keys
         const keys = await AsyncStorage.getAllKeys();
         const wcKeys = keys.filter(k => k.startsWith('wc@2'));
-        if (wcKeys.length > 0) await AsyncStorage.multiRemove(wcKeys);
+        if (wcKeys.length > 0) {
+            await AsyncStorage.multiRemove(wcKeys);
+        }
         
-    } catch (e) {
-        console.warn("Disconnect cleanup error", e);
+        console.log("✅ Wallet disconnected");
+        
+    } catch (e: any) {
+        // Suppress all session-related errors
+        if (!e.message?.includes('session topic') && !e.message?.includes('No matching key')) {
+            console.warn("Disconnect cleanup:", e.message);
+        }
     }
-    
-    setWcProvider(null);
-    connectLockRef.current = false;
   }, []);
 
   const cancelConnection = useCallback(async () => {

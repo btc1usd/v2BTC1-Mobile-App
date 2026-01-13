@@ -186,19 +186,11 @@ export async function mintBTC1WithPermit2(
 
     console.log("🚀 Broadcasting transaction...");
 
-    // Fire-and-forget the session ping + Open Wallet parallel to TX creation
-    const keepAlivePromise = (async () => {
-       try { await (provider as any).send("eth_chainId", []); } catch (e) {}
-    })();
+    // Fire-and-forget: Open wallet in background (non-blocking)
+    openWalletApp('transaction').catch(() => {});
     
-    const openWalletPromise = openWalletApp('transaction');
-
-    // Send TX immediately while background tasks handle UI/Session
-    const [tx] = await Promise.all([
-      vaultContract.mintWithPermit2(collateralAddress, btcAmount, permit, signature),
-      keepAlivePromise,
-      openWalletPromise
-    ]);
+    // Send TX INSTANTLY - no delays, no waiting
+    const tx = await vaultContract.mintWithPermit2(collateralAddress, btcAmount, permit, signature);
 
     console.log("✅ Transaction sent:", tx.hash);
     
@@ -279,16 +271,11 @@ export async function redeemBTC1WithPermit(
 
     console.log("🚀 Broadcasting redeem...");
 
-    // Parallel execution of wallet UX and Transaction sending
-    const keepAlivePromise = (async () => {
-      try { await (provider as any).send("eth_chainId", []); } catch (e) {}
-   })();
+    // Fire-and-forget: Open wallet in background (non-blocking)
+    openWalletApp('transaction').catch(() => {});
    
-    const [tx] = await Promise.all([
-      vaultContract.redeemWithPermit(btc1Amount, collateralAddress, deadline, sig.v, sig.r, sig.s),
-      keepAlivePromise,
-      openWalletApp('transaction')
-    ]);
+    // Send TX INSTANTLY - no delays, no waiting
+    const tx = await vaultContract.redeemWithPermit(btc1Amount, collateralAddress, deadline, sig.v, sig.r, sig.s);
 
     console.log("✅ Redeem sent:", tx.hash);
 
