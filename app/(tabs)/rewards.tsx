@@ -21,7 +21,8 @@ import {
 type ClaimStep = "input" | "claiming" | "success" | "error";
 
 export default function RewardsScreen() {
-  const { address, isConnected, chainId, signer, provider } = useWeb3();
+  const web3 = useWeb3();
+  const { address, isConnected, chainId, signer, wcProvider, readProvider } = web3;
   const { distributionCount, timeUntilDistribution, canDistribute, lastDistributionDate } = useDistributionData();
   const { disconnectWallet } = useWallet();
   
@@ -37,8 +38,9 @@ export default function RewardsScreen() {
   
   useEffect(() => {
     const fetchRewards = async () => {
-      if (!provider || !address || chainId !== 84532) {
-        console.log('[Rewards] Skipping fetch - missing:', { provider: !!provider, address, chainId });
+      // CRITICAL: Use readProvider for all reads - NEVER WalletConnect
+      if (!readProvider || !address || chainId !== 84532) {
+        console.log('[Rewards] Skipping fetch - missing:', { readProvider: !!readProvider, address, chainId });
         return;
       }
       
@@ -55,7 +57,7 @@ export default function RewardsScreen() {
         }
         
         // Fetch unclaimed rewards from Supabase with on-chain verification
-        const unclaimed = await fetchUserUnclaimedRewards(address, provider);
+        const unclaimed = await fetchUserUnclaimedRewards(address, readProvider);
         console.log('[Rewards] Unclaimed rewards:', unclaimed.length);
         setUnclaimedRewardsList(unclaimed);
         setHasUnclaimedRewards(unclaimed.length > 0);
@@ -86,7 +88,7 @@ export default function RewardsScreen() {
           const distributorContract = new ethers.Contract(
             CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR,
             ABIS.MERKLE_DISTRIBUTOR,
-            provider
+            readProvider
           );
           const distId = await distributorContract.currentDistributionId();
           setCurrentDistributionId(Number(distId));
@@ -100,9 +102,11 @@ export default function RewardsScreen() {
     };
     
     fetchRewards();
-    const interval = setInterval(fetchRewards, 30000); // Refresh every 30s
-    return () => clearInterval(interval);
-  }, [provider, address, chainId]);
+    // OPTIMIZED: Removed 30s polling - rewards update on:
+    // 1. Component mount or chainId change
+    // 2. Manual refresh via pull-to-refresh
+    // 3. After successful claim
+  }, [readProvider, address, chainId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -110,11 +114,11 @@ export default function RewardsScreen() {
     setLastRefreshTime(Date.now()); // Force cache bust
     
     // Refetch rewards data from Supabase with on-chain verification
-    if (address && chainId === 84532 && provider) {
+    if (address && chainId === 84532 && readProvider) {
       try {
         const [currentDist, unclaimed, earned] = await Promise.all([
           fetchCurrentDistribution(),
-          fetchUserUnclaimedRewards(address, provider),
+          fetchUserUnclaimedRewards(address, readProvider),
           fetchTotalRewardsEarned(address),
         ]);
         
@@ -143,7 +147,7 @@ export default function RewardsScreen() {
   };
 
   const handleClaim = async (claim: MerkleClaim) => {
-    if (!signer || !address) return;
+    if (!signer || !wcProvider || !address) return;
     
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setClaimingDistributionId(claim.distribution_id);
@@ -156,6 +160,28 @@ export default function RewardsScreen() {
         proofLength: claim.proof.length,
       });
       
+      // CRITICAL: Wake wallet immediately on user intent
+      console.log("🔔 Waking wallet for claim transaction...");
+      
+      // Get fresh provider and signer from WalletConnect
+      const freshProvider = new ethers.BrowserProvider(wcProvider);
+      
+      // Wake the wallet session
+      try {
+        await freshProvider.send("eth_accounts", []);
+      } catch (sessionError: any) {
+        console.error("Session error:", sessionError);
+        if (sessionError.message?.includes("session") || sessionError.message?.includes("topic")) {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          alert("Wallet session expired. Please reconnect your wallet.");
+          setClaimingDistributionId(null);
+          return;
+        }
+        throw sessionError;
+      }
+      
+      const freshSigner = await freshProvider.getSigner();
+      
       // Call claim with real merkle proof from Supabase
       const result = await claimRewards(
         claim.distribution_id,
@@ -163,7 +189,7 @@ export default function RewardsScreen() {
         address,
         ethers.formatUnits(claim.amount, 8), // Convert to human-readable format
         claim.proof,
-        signer
+        freshSigner
       );
       
       if (!result.success) {

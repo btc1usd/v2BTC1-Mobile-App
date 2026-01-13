@@ -20,12 +20,15 @@ import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { NetworkBanner } from "./network-indicator";
 import { DebugPanel } from "./debug-panel";
 import { WalletHeader } from "./wallet-header";
+import { fetchUserUnclaimedRewards } from "@/lib/supabase";
+import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export function DashboardScreen() {
   const { address, disconnectWallet } = useWallet();
   const web3 = useWeb3();
-  const { provider, readOnlyProvider, chainId } = web3;
+  const { readProvider, chainId } = web3;
   const wcProvider = web3.wcProvider;
+  const colorScheme = useColorScheme();
   
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
@@ -38,15 +41,50 @@ export function DashboardScreen() {
   const [tBtcBalance, setTBtcBalance] = useState("0");
   const [isLoadingCollateral, setIsLoadingCollateral] = useState(false);
 
+  // Available rewards
+  const [availableRewards, setAvailableRewards] = useState("0");
+  const [isLoadingRewards, setIsLoadingRewards] = useState(false);
+
   // Hooks for real data
   const { balance, formattedBalance, isLoading: isLoadingBalance, refetch: refetchBalance } = useBtc1Balance();
   const { collateralRatio, totalCollateralValue, btcPrice, isHealthy, isLoading: isLoadingVault } = useVaultStats();
   const { timeUntilDistribution, isLoading: isLoadingDist } = useDistributionData();
 
+  // Fetch available rewards
+  useEffect(() => {
+    const fetchRewards = async () => {
+      if (!readProvider || !address || chainId !== 84532) {
+        return;
+      }
+      
+      try {
+        setIsLoadingRewards(true);
+        const unclaimed = await fetchUserUnclaimedRewards(address, readProvider);
+        
+        if (unclaimed.length > 0) {
+          const total = unclaimed.reduce((sum, claim) => {
+            return sum + BigInt(claim.amount);
+          }, BigInt(0));
+          const totalFormatted = ethers.formatUnits(total, 8);
+          setAvailableRewards(totalFormatted);
+        } else {
+          setAvailableRewards("0");
+        }
+      } catch (error) {
+        console.error('Error fetching rewards:', error);
+        setAvailableRewards("0");
+      } finally {
+        setIsLoadingRewards(false);
+      }
+    };
+    
+    fetchRewards();
+  }, [readProvider, address, chainId]);
+
   // Fetch total supply
   useEffect(() => {
     const fetchTotalSupply = async () => {
-      const providerToUse = readOnlyProvider || provider;
+      const providerToUse = readProvider;
       if (!providerToUse) return;
 
       try {
@@ -66,19 +104,17 @@ export function DashboardScreen() {
     };
 
     fetchTotalSupply();
-    const interval = setInterval(fetchTotalSupply, 30000);
-    return () => clearInterval(interval);
-  }, [provider, readOnlyProvider, chainId]);
+  }, [chainId]);
 
   // Fetch collateral balances
   useEffect(() => {
     const fetchCollateralBalances = async () => {
-      const providerToUse = readOnlyProvider || provider;
+      const providerToUse = readProvider;
       if (!providerToUse) return;
 
       try {
         setIsLoadingCollateral(true);
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // OPTIMIZED: Direct parallel contract calls for speed - no artificial delays
 
         const wbtcContract = new ethers.Contract(CONTRACT_ADDRESSES.WBTC_TOKEN, ABIS.ERC20, providerToUse);
         const cbBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.CBBTC_TOKEN, ABIS.ERC20, providerToUse);
@@ -101,9 +137,7 @@ export function DashboardScreen() {
     };
 
     fetchCollateralBalances();
-    const interval = setInterval(fetchCollateralBalances, 30000);
-    return () => clearInterval(interval);
-  }, [provider, readOnlyProvider, chainId]);
+  }, [chainId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -213,8 +247,16 @@ export function DashboardScreen() {
             </View>
             <View className="flex-row items-end justify-between">
               <View>
-                <Text className="text-4xl font-bold text-foreground">0.0000</Text>
-                <Text className="text-sm text-muted mt-1">BTC1</Text>
+                {isLoadingRewards ? (
+                  <ActivityIndicator size="small" color="#F7931A" />
+                ) : (
+                  <>
+                    <Text className="text-4xl font-bold text-foreground">
+                      {parseFloat(availableRewards).toFixed(4)}
+                    </Text>
+                    <Text className="text-sm text-muted mt-1">BTC1</Text>
+                  </>
+                )}
               </View>
               <View className="items-end">
                 <Text className="text-xs text-muted">Next Distribution</Text>
@@ -232,27 +274,63 @@ export function DashboardScreen() {
           <View className="flex-row gap-3 mb-6">
             <TouchableOpacity
               onPress={() => handleNavigate("/mint")}
-              className="flex-1 bg-primary rounded-2xl p-4 items-center"
+              className="flex-1 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-4 items-center border-2 border-primary/30 shadow-lg"
             >
-              <Text className="text-2xl mb-2">➕</Text>
-              <Text className="text-sm font-bold text-white">Mint</Text>
-              <Text className="text-xs text-white/70">Deposit BTC</Text>
+              <View className="w-12 h-12 rounded-full bg-primary/20 items-center justify-center mb-2">
+                <Text className="text-2xl">🏛️</Text>
+              </View>
+              <Text 
+                className="text-sm font-bold"
+                style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000' }}
+              >
+                Mint
+              </Text>
+              <Text 
+                className="text-xs"
+                style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000', opacity: 0.7 }}
+              >
+                Deposit BTC
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleNavigate("/redeem")}
-              className="flex-1 bg-surface rounded-2xl p-4 items-center border-2 border-border"
+              className="flex-1 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-4 items-center border-2 border-primary/30 shadow-lg"
             >
-              <Text className="text-2xl mb-2">➖</Text>
-              <Text className="text-sm font-bold text-foreground">Redeem</Text>
-              <Text className="text-xs text-muted">Withdraw BTC</Text>
+              <View className="w-12 h-12 rounded-full bg-primary/20 items-center justify-center mb-2">
+                <Text className="text-2xl">💸</Text>
+              </View>
+              <Text 
+                className="text-sm font-bold"
+                style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000' }}
+              >
+                Redeem
+              </Text>
+              <Text 
+                className="text-xs"
+                style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000', opacity: 0.7 }}
+              >
+                Withdraw BTC
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleNavigate("/rewards")}
-              className="flex-1 bg-surface rounded-2xl p-4 items-center border-2 border-border"
+              className="flex-1 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-4 items-center border-2 border-primary/30 shadow-lg"
             >
-              <Text className="text-2xl mb-2">🎁</Text>
-              <Text className="text-sm font-bold text-foreground">Rewards</Text>
-              <Text className="text-xs text-muted">Claim</Text>
+              <View className="w-12 h-12 rounded-full bg-primary/20 items-center justify-center mb-2">
+                <Text className="text-2xl">🎁</Text>
+              </View>
+              <Text 
+                className="text-sm font-bold"
+                style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000' }}
+              >
+                Rewards
+              </Text>
+              <Text 
+                className="text-xs"
+                style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000', opacity: 0.7 }}
+              >
+                Claim
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -314,23 +392,10 @@ export function DashboardScreen() {
             />
           </View>
 
-          {/* ───────── WALLET INFO ───────── */}
-          <View className="bg-surface rounded-2xl p-4 border border-border">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <View className="w-2 h-2 rounded-full bg-success mr-2" />
-                <Text className="text-xs text-muted">Connected</Text>
-              </View>
-              <Text className="text-xs font-mono text-foreground">
-                {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Not connected"}
-              </Text>
-            </View>
-          </View>
-
           {/* Info */}
           <View className="mt-6 p-4 bg-primary/5 rounded-xl border border-primary/20">
             <Text className="text-xs text-muted text-center leading-5">
-              💡 BTC1 is a Bitcoin-backed stablecoin. Mint by depositing BTC collateral, 
+              💡 BTC1 is a Bitcoin-backed coin. Mint by depositing BTC collateral, 
               redeem anytime to withdraw your Bitcoin.
             </Text>
           </View>

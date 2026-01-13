@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Linking,
+  AppState,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 
@@ -31,9 +32,9 @@ export default function RedeemScreen() {
     isConnected,
     chainId,
     signer,
-    provider,
+    wcProvider,
+    readProvider,
   } = web3;
-  const wcProvider = web3.wcProvider;
   const { disconnectWallet } = useWallet();
 
   const [amount, setAmount] = useState("");
@@ -41,9 +42,27 @@ export default function RedeemScreen() {
   const [step, setStep] = useState<RedeemStep>("idle");
   const [txHash, setTxHash] = useState("");
   const [error, setError] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false); // Lock state during transaction
+  
+  // Scroll ref for auto-scroll to button
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // Keep loading state visible when app returns from wallet
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active" && isProcessing) {
+        console.log("🔄 App returned to foreground - keeping loading state");
+        // Keep the loading state - don't reset
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isProcessing]);
 
   const { enforceNetwork } = useNetworkEnforcement({
-    provider,
+    provider: readProvider,
     wcProvider,
     chainId,
     isConnected,
@@ -88,7 +107,7 @@ export default function RedeemScreen() {
   const canRedeem = amount && Number(amount) > 0 && Number(amount) <= balance && step === "idle";
 
   const handleRedeem = async () => {
-    if (!signer || !provider || !address) return;
+    if (!signer || !wcProvider || !address) return;
 
     const ok = await enforceNetwork("Redeem BTC1");
     if (!ok) return;
@@ -102,34 +121,29 @@ export default function RedeemScreen() {
     try {
       setError("");
       setStep("signing");
+      setIsProcessing(true); // Lock UI
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // CRITICAL: Get fresh provider and signer after network switch
-      let freshProvider = provider;
-      let freshSigner = signer;
+      // OPTIMIZED: Get signer directly - no session wake delay
+      console.log("🚀 Starting redeem flow (lightning fast)...");
+      
+      const { ethers } = await import("ethers");
+      const freshProvider = new ethers.BrowserProvider(wcProvider);
+      const freshSigner = await freshProvider.getSigner();
 
-      if (wcProvider) {
-        const { ethers } = await import("ethers");
-        freshProvider = new ethers.BrowserProvider(wcProvider);
-        
-        await freshProvider.send("eth_accounts", []);
-        // OPTIMIZED: Removed delay - not needed with proper wallet wake
-        
-        freshSigner = await freshProvider.getSigner();
-        
-        const network = await freshProvider.getNetwork();
-        console.log("Fresh signer network:", network.chainId.toString());
-      } else {
-        await provider.send("eth_accounts", []);
-        freshSigner = await provider.getSigner();
-      }
-
+      console.log("📝 [UI] Calling redeemBTC1WithPermit...");
       const result = await redeemBTC1WithPermit(amount, selectedToken.address, freshSigner);
+      
+      console.log("✅ [UI] Redeem result:", result.success, result.txHash);
 
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) {
+        console.error("❌ [UI] Redeem failed:", result.error);
+        throw new Error(result.error);
+      }
 
       setTxHash(result.txHash!);
       setStep("success");
+      setIsProcessing(false); // Unlock UI
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       setTimeout(() => {
@@ -138,10 +152,13 @@ export default function RedeemScreen() {
         setTxHash("");
       }, 5000);
     } catch (e: any) {
-      console.error("Redeem error:", e);
-      const msg = e.message?.includes("rejected") ? "Transaction cancelled" : e.message || "Transaction failed";
+      console.error("❌ [UI] Redeem error caught:", e);
+      const msg = e.message?.includes("rejected") || e.message?.includes("user rejected") 
+        ? "Transaction cancelled" 
+        : e.message || "Transaction failed";
       setError(msg);
       setStep("error");
+      setIsProcessing(false); // Unlock UI
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setTimeout(() => setStep("idle"), 4000);
     }
@@ -198,15 +215,66 @@ export default function RedeemScreen() {
   if (step === "signing") {
     return (
       <ScreenContainer className="items-center justify-center p-8">
-        <View className="items-center">
+        <View className="items-center w-full">
+          {/* Progress Steps */}
+          <View className="flex-row items-center justify-center mb-8 w-full px-4">
+            {/* Sign Step */}
+            <View className="items-center flex-1">
+              <View 
+                className="w-14 h-14 rounded-full items-center justify-center bg-primary shadow-lg"
+                style={{
+                  shadowColor: '#F7931A',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.8,
+                  shadowRadius: 6,
+                  elevation: 8,
+                }}
+              >
+                <Text className="text-2xl">✍️</Text>
+              </View>
+              <Text className="text-xs mt-2 font-bold text-primary" style={{ opacity: 1 }}>Sign</Text>
+            </View>
+            
+            {/* Connecting Line */}
+            <View 
+              className="h-1.5 flex-1 mx-2 rounded-full bg-border"
+              style={{ opacity: 0.4 }}
+            />
+            
+            {/* Confirm Step */}
+            <View className="items-center flex-1">
+              <View 
+                className="w-14 h-14 rounded-full items-center justify-center bg-border shadow-lg"
+                style={{
+                  shadowColor: '#666',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.6,
+                  shadowRadius: 4,
+                  elevation: 4,
+                }}
+              >
+                <Text className="text-2xl">⚡</Text>
+              </View>
+              <Text className="text-xs mt-2 font-bold text-muted" style={{ opacity: 0.7 }}>Confirm</Text>
+            </View>
+          </View>
+
+          {/* Spinner & Message */}
           <View className="w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-6">
             <ActivityIndicator size="large" color="#F7931A" />
           </View>
+          <Text className="text-2xl mb-3">✍️</Text>
           <Text className="text-xl font-bold text-foreground mb-2">
-            Sign Permit
+            Sign & Confirm
           </Text>
-          <Text className="text-sm text-muted text-center">
-            Sign the permit message in your wallet
+          <Text className="text-sm text-muted text-center mb-4">
+            Sign the permit and confirm transaction in your wallet
+          </Text>
+          <Text className="text-xs text-muted/60 text-center px-8">
+            📱 Check your wallet app to continue...
+          </Text>
+          <Text className="text-xs text-muted/60 text-center px-8 mt-2">
+            Do not close this screen
           </Text>
         </View>
       </ScreenContainer>
@@ -243,9 +311,11 @@ export default function RedeemScreen() {
         <WalletHeader address={address} chainId={chainId} compact onDisconnect={disconnectWallet} />
           
         <ScrollView
+          ref={scrollViewRef}
           className="flex-1"
           contentContainerStyle={{ paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Header */}
           <View className="px-6 pt-2 pb-2">
@@ -255,7 +325,7 @@ export default function RedeemScreen() {
           <View className="px-6">
             <Text className="text-3xl font-bold text-foreground mb-1">Redeem BTC1</Text>
             <Text className="text-sm text-muted mb-6">
-              Burn BTC1 stablecoins to withdraw Bitcoin collateral
+              Burn BTC1 coins to withdraw Bitcoin collateral
             </Text>
 
             {/* ───────── BURN CARD ───────── */}
@@ -281,9 +351,18 @@ export default function RedeemScreen() {
                 <TextInput
                   value={amount}
                   onChangeText={setAmount}
+                  onBlur={() => {
+                    // Auto-scroll to button when user finishes entering (keyboard dismisses)
+                    if (amount && Number(amount) > 0) {
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                      }, 100);
+                    }
+                  }}
                   placeholder="0"
                   placeholderTextColor="#6B7280"
                   keyboardType="decimal-pad"
+                  returnKeyType="done"
                   className="flex-1 text-4xl font-bold text-foreground"
                 />
                 

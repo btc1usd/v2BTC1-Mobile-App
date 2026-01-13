@@ -3,6 +3,23 @@
 // MUST be first
 import "react-native-get-random-values";
 
+// Suppress WalletConnect/Pino logger errors in production
+if (__DEV__ === false) {
+  // @ts-ignore - Suppress pino logger
+  global.pino = { child: () => ({ error: () => {}, warn: () => {}, info: () => {}, debug: () => {} }) };
+}
+
+// Override console.error to filter out pino logs
+const originalConsoleError = console.error;
+console.error = (...args: any[]) => {
+  // Filter out pino/WalletConnect logger messages with level: 50
+  const stringified = JSON.stringify(args);
+  if (stringified.includes('"level":50') || stringified.includes('"level": 50')) {
+    return; // Suppress this log
+  }
+  originalConsoleError(...args);
+};
+
 import React, {
   createContext,
   useContext,
@@ -100,10 +117,11 @@ export type WalletId = keyof typeof SUPPORTED_WALLETS;
 ============================================================ */
 
 interface Web3ContextType {
-  // Providers
-  provider: ethers.BrowserProvider | null;
+  // READ-ONLY Provider (Singleton RPC - NEVER uses WalletConnect)
+  readProvider: ethers.JsonRpcProvider;
+  
+  // WRITE-ONLY Providers (Only for transactions/signatures)
   signer: ethers.Signer | null;
-  readOnlyProvider: ethers.JsonRpcProvider;
   wcProvider: any | null; // EthereumProvider instance
   
   // Account & Network
@@ -113,14 +131,15 @@ interface Web3ContextType {
   // Connection State
   isConnected: boolean;
   isConnecting: boolean;
-  isInitializing: boolean; // New: startup initialization state
+  isInitializing: boolean;
   error: string | null;
   
   // Actions
   connectWallet: (walletId: WalletId) => Promise<void>;
   disconnectWallet: () => Promise<void>;
-  cancelConnection: () => Promise<void>; // New: cancel ongoing connection
+  cancelConnection: () => Promise<void>;
   switchChain: (chainId: number) => Promise<void>;
+  wakeWallet: () => Promise<void>; // NEW: Wake wallet on user intent
 }
 
 /* ============================================================
@@ -221,13 +240,15 @@ export async function clearAllWalletConnectData() {
 ============================================================ */
 
 export function Web3Provider({ children }: { children: ReactNode }) {
-  /* ---------------- READ-ONLY PROVIDER (ALWAYS AVAILABLE) ---------------- */
-  const readOnlyProvider = useRef(
+  /* ---------------- READ-ONLY RPC PROVIDER (SINGLETON - ALWAYS AVAILABLE) ---------------- */
+  // This provider is ONLY for reads: balanceOf, decimals, allowance, getNetwork, etc.
+  // NEVER use WalletConnect for reads - causes slow communication
+  const readProvider = useRef(
     new ethers.JsonRpcProvider(BASE_RPC_URL, BASE_CHAIN_ID)
   ).current;
 
-  /* ---------------- STATE ---------------- */
-  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
+  /* ---------------- WRITE-ONLY STATE ---------------- */
+  // Only used for transactions and signatures
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
   const [wcProvider, setWcProvider] = useState<any | null>(null);
   const [address, setAddress] = useState<string | null>(null);
@@ -235,7 +256,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isInitializing, setIsInitializing] = useState(true); // New: track startup initialization
+  const [isInitializing, setIsInitializing] = useState(true);
 
   /* ---------------- REFS ---------------- */
   const wcInstanceRef = useRef<any>(null);
@@ -250,6 +271,36 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     if (wcInstanceRef.current) return wcInstanceRef.current;
 
     try {
+      // CRITICAL: Clear any stored invalid sessions before init
+      // This prevents "session topic doesn't exist" errors
+      const keys = await AsyncStorage.getAllKeys();
+      const wcSessionKeys = keys.filter(key => 
+        key.includes('wc@2:client') || 
+        key.includes('wc@2:session')
+      );
+      
+      if (wcSessionKeys.length > 0) {
+        console.log("🧹 Cleaning up old WalletConnect sessions...");
+        // Check each session for validity
+        for (const key of wcSessionKeys) {
+          try {
+            const data = await AsyncStorage.getItem(key);
+            if (data) {
+              const parsed = JSON.parse(data);
+              // Remove sessions older than 7 days
+              if (parsed.expiry && parsed.expiry < Date.now() / 1000) {
+                console.log(`🗑️ Removing expired session: ${key}`);
+                await AsyncStorage.removeItem(key);
+              }
+            }
+          } catch (e) {
+            // Invalid JSON, remove it
+            console.log(`🗑️ Removing invalid session: ${key}`);
+            await AsyncStorage.removeItem(key);
+          }
+        }
+      }
+
       const provider = await EthereumProvider.init({
         projectId: WALLETCONNECT_PROJECT_ID,
         chains: [BASE_CHAIN_ID],
@@ -296,11 +347,9 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       console.log("WC: chainChanged", chainId);
       setChainId(Number(chainId));
       
-      // Recreate ethers provider on chain change (CRITICAL)
+      // Recreate signer on chain change
       const newProvider = new ethers.BrowserProvider(provider);
-      setProvider(newProvider);
-      
-      newProvider.getSigner().then(newSigner => {
+      newProvider.getSigner().then((newSigner: ethers.Signer) => {
         setSigner(newSigner);
       }).catch(console.error);
     });
@@ -324,6 +373,15 @@ export function Web3Provider({ children }: { children: ReactNode }) {
       console.log("WC: session_delete");
       disconnectWallet();
     });
+
+    // CRITICAL: Handle session errors globally
+    provider.on("session_error", (error: any) => {
+      console.error("WC: session_error", error);
+      if (error.message?.includes("session topic doesn't exist") || error.message?.includes("No matching key")) {
+        console.log("Session expired or invalid - auto-disconnecting");
+        disconnectWallet();
+      }
+    });
   }, []);
 
   /* ============================================================
@@ -343,25 +401,35 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     try {
       console.log(`Connecting to ${walletId}...`);
       
+      // CRITICAL: Clear all stale WC sessions before connecting
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const wcSessionKeys = keys.filter(key => 
+          key.includes('wc@2:client') || 
+          key.includes('wc@2:session') ||
+          key.includes('walletconnect')
+        );
+        
+        if (wcSessionKeys.length > 0) {
+          await AsyncStorage.multiRemove(wcSessionKeys);
+          console.log(`🧹 Pre-cleared ${wcSessionKeys.length} stale session keys`);
+        }
+      } catch (cleanupError) {
+        console.log("⚠️ Session cleanup error (non-critical):", cleanupError);
+      }
+
+      // Force clear any existing instance
+      if (wcInstanceRef.current) {
+        try {
+          await wcInstanceRef.current.disconnect();
+        } catch {}
+        wcInstanceRef.current = null;
+      }
+      
       // Wrap entire connection flow with 2 minute timeout
       const connectWithTimeout = async () => {
-        // Initialize or get existing provider
+        // Initialize fresh provider
         const wcProvider = await initializeWalletConnect();
-        
-        // Check if there's an existing session and clear it if invalid
-        if (wcProvider.session) {
-          try {
-            // Test if session is valid
-            await wcProvider.request({ method: "eth_chainId" });
-          } catch (sessionError: any) {
-            console.log("Existing session is invalid, clearing...");
-            await wcProvider.disconnect();
-            wcInstanceRef.current = null;
-            // Reinitialize
-            const newProvider = await initializeWalletConnect();
-            wcInstanceRef.current = newProvider;
-          }
-        }
         
         // Set up deep link handler
         wcProvider.on("display_uri", async (uri: string) => {
@@ -419,7 +487,6 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
       // Update state with connected wallet
       setWcProvider(result.wcProvider);
-      setProvider(result.ethersProvider);
       setSigner(result.signer);
       setAddress(result.address);
       setChainId(result.chainId);
@@ -439,8 +506,14 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         errorMessage = "Connection timed out. Please open your wallet app and try again.";
       } else if (error.message?.includes("rejected")) {
         errorMessage = "Connection rejected by user";
-      } else if (error.message?.includes("session")) {
-        errorMessage = "Session error - please try again";
+      } else if (error.message?.includes("session topic") || error.message?.includes("No matching key")) {
+        errorMessage = "Session error - please try connecting again";
+        // Force cleanup
+        try {
+          const keys = await AsyncStorage.getAllKeys();
+          const wcKeys = keys.filter(key => key.includes('wc@2') || key.includes('walletconnect'));
+          if (wcKeys.length > 0) await AsyncStorage.multiRemove(wcKeys);
+        } catch {}
       } else if (error.message?.includes("User closed modal")) {
         errorMessage = "Connection cancelled";
       } else if (error.message) {
@@ -476,15 +549,34 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     try {
       if (wcInstanceRef.current) {
         await wcInstanceRef.current.disconnect();
+        console.log("✅ WalletConnect session terminated");
         wcInstanceRef.current = null;
       }
       
       await clearConnection();
+      console.log("✅ Storage cleared");
+
+      // CRITICAL: Clear all WalletConnect session data
+      const keys = await AsyncStorage.getAllKeys();
+      const wcSessionKeys = keys.filter(key => 
+        key.includes('wc@2:client') || 
+        key.includes('wc@2:session') ||
+        key.includes('walletconnect')
+      );
+      
+      if (wcSessionKeys.length > 0) {
+        await AsyncStorage.multiRemove(wcSessionKeys);
+        console.log(`🧹 Cleaned up ${wcSessionKeys.length} WalletConnect session keys`);
+      }
+
+      // Reset connection lock
+      connectLockRef.current = false;
+      
+      console.log("✅ Wallet disconnected and all data cleared");
     } catch (error) {
       console.error("Disconnect error:", error);
     } finally {
       setWcProvider(null);
-      setProvider(null);
       setSigner(null);
       setAddress(null);
       setChainId(BASE_CHAIN_ID);
@@ -579,11 +671,28 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
           console.log("🔄 Restoring previous session...");
           
-          // Try to restore session
+          // Try to restore session with error handling
           const ethersProvider = new ethers.BrowserProvider(wc);
           
-          // Test the connection with timeout
-          await ethersProvider.send("eth_accounts", []);
+          // Test the connection with timeout and error handling
+          try {
+            await ethersProvider.send("eth_accounts", []);
+          } catch (sessionError: any) {
+            // CRITICAL: If session is invalid, clear it
+            if (sessionError.message?.includes("session topic doesn't exist") || 
+                sessionError.message?.includes("No matching key")) {
+              console.log("⚠️ Session invalid - clearing and requiring fresh connection");
+              await clearConnection();
+              if (wcInstanceRef.current) {
+                try {
+                  await wcInstanceRef.current.disconnect();
+                } catch {}
+                wcInstanceRef.current = null;
+              }
+              return null;
+            }
+            throw sessionError;
+          }
           
           const signer = await ethersProvider.getSigner();
           const address = await signer.getAddress();
@@ -624,7 +733,6 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
         // Successfully restored session
         setWcProvider(result.wc);
-        setProvider(result.ethersProvider);
         setSigner(result.signer);
         setAddress(result.address);
         setChainId(result.chainId);
@@ -655,40 +763,46 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   }, [initializeWalletConnect, setupEventListeners]);
 
   /* ============================================================
-     APP STATE HANDLER (WAKE UP ON FOREGROUND)
+     WAKE WALLET ON USER INTENT
   ============================================================ */
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener(
-      "change",
-      (nextAppState: AppStateStatus) => {
-        if (
-          appStateRef.current.match(/inactive|background/) &&
-          nextAppState === "active" &&
-          isConnected &&
-          provider
-        ) {
-          // Wake up provider when app comes to foreground
-          console.log("App resumed, waking provider...");
-          provider.send("eth_accounts", []).catch(console.error);
-        }
-        appStateRef.current = nextAppState;
-      }
-    );
+  const wakeWallet = useCallback(async () => {
+    if (!wcProvider || !isConnected) {
+      console.log("No wallet connected to wake");
+      return;
+    }
 
-    return () => {
-      subscription.remove();
-    };
-  }, [isConnected, provider]);
+    try {
+      console.log("🔔 Waking wallet session...");
+      await wcProvider.request({ method: "eth_accounts", params: [] });
+      console.log("✅ Wallet session active");
+    } catch (error: any) {
+      console.error("Failed to wake wallet:", error.message);
+      
+      // CRITICAL: If session is invalid, auto-disconnect
+      if (error.message?.includes("session topic doesn't exist") || 
+          error.message?.includes("No matching key") ||
+          error.message?.includes("session")) {
+        console.log("Session invalid during wake - disconnecting");
+        await disconnectWallet();
+      }
+    }
+  }, [wcProvider, isConnected]);
+
+  /* ============================================================
+     APP STATE HANDLER (REMOVED - NO AUTO-WAKE ON FOREGROUND)
+  ============================================================ */
+
+  // REMOVED: No longer wake wallet on app foreground
+  // Wallet should only wake on explicit user action (Mint/Redeem/Approve buttons)
 
   /* ============================================================
      CONTEXT VALUE
   ============================================================ */
 
   const value: Web3ContextType = {
-    provider,
+    readProvider,
     signer,
-    readOnlyProvider,
     wcProvider,
     address,
     chainId,
@@ -700,6 +814,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     disconnectWallet,
     cancelConnection,
     switchChain,
+    wakeWallet,
   };
 
   return <Web3Context.Provider value={value}>{children}</Web3Context.Provider>;

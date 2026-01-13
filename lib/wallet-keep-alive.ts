@@ -18,13 +18,13 @@ let lastWalletActivity = Date.now();
 let keepAliveInterval: ReturnType<typeof setInterval> | null = null;
 let appStateListener: any = null;
 
-// Configuration - Optimized for mobile DeFi apps (Uniswap/Aave standards)
+// Configuration - Optimized for lightning-fast mobile DeFi (Uniswap speed)
 export const KEEP_ALIVE_INTERVAL = 30000; // 30 seconds
 export const SESSION_TIMEOUT = 120000; // 2 minutes
 export const MAX_RETRY_ATTEMPTS = 1;
-export const TRANSACTION_TIMEOUT = 60000; // 60 seconds for transaction approval (faster UX)
-export const SIGNATURE_TIMEOUT = 45000; // 45 seconds for signature approval (faster UX)
-export const WALLET_OPEN_DELAY = 300; // 300ms delay after opening wallet (industry standard)
+export const TRANSACTION_TIMEOUT = 90000; // 90 seconds - more time for confirmation
+export const SIGNATURE_TIMEOUT = 45000; // 45 seconds - reasonable for signing
+export const WALLET_OPEN_DELAY = 0; // 0ms - instant for maximum speed
 
 /**
  * Execute operation with timeout
@@ -117,9 +117,10 @@ export async function openWalletApp(action: 'connect' | 'transaction' | 'signatu
         }
       }
       
-      // Reduced delay - only 100ms since we're not waiting for response
-      // Just enough time for OS to switch apps
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Minimal delay - just 0ms for instant app switching (maximum speed)
+      if (WALLET_OPEN_DELAY > 0) {
+        await new Promise(resolve => setTimeout(resolve, WALLET_OPEN_DELAY));
+      }
     } else {
       console.log("⚠️ Unknown wallet, cannot open app");
     }

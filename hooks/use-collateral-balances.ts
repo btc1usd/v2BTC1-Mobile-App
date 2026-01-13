@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { ethers } from "ethers";
 import { ABIS, COLLATERAL_TOKENS } from "@/lib/shared/contracts";
 import { safeContractCall } from "@/lib/wallet-keep-alive";
+import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 
 /**
  * DeFi balance fetching hook with retry and caching
@@ -27,7 +28,6 @@ export interface UseCollateralBalancesResult {
 
 interface UseCollateralBalancesOptions {
   userAddress: string | null;
-  provider: any;
   chainId: number | null;
   enabled?: boolean;
 }
@@ -39,10 +39,10 @@ const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
 
 export function useCollateralBalances({
   userAddress,
-  provider,
   chainId,
   enabled = true,
 }: UseCollateralBalancesOptions): UseCollateralBalancesResult {
+  const { readProvider } = useWeb3();
   
   const [balances, setBalances] = useState<Record<string, CollateralBalance>>(() => {
     return COLLATERAL_TOKENS.reduce((acc, token) => {
@@ -67,33 +67,14 @@ export function useCollateralBalances({
   const cacheRef = useRef<Record<string, CollateralBalance>>({});
   const mountedRef = useRef(true);
 
-  // Derive read provider with RPC fallback
-  const getReadProvider = useCallback((): ethers.Provider | null => {
-    // Try wallet provider first
-    if (provider) {
-      try {
-        if (provider.getNetwork && typeof provider.getNetwork === "function") {
-          return provider as ethers.Provider;
-        }
-        if (provider.provider) {
-          return provider.provider as ethers.Provider;
-        }
-        return provider as ethers.Provider;
-      } catch {
-        // Fall through to RPC
-      }
-    }
-    
-    // Fallback: Create direct RPC provider for Base Sepolia
-    if (chainId === 84532 || !chainId) {
-      return new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC, 84532);
-    }
-    
-    return null;
-  }, [provider, chainId]);
+  // CRITICAL: Always use RPC provider for reads - NEVER WalletConnect
+  // This eliminates slow wallet communication for balance checks
+  const getReadProvider = (): ethers.Provider => {
+    return readProvider;
+  };
 
   // Validate prerequisites
-  const validatePrerequisites = useCallback((): {
+  const validatePrerequisites = (): {
     valid: boolean;
     reason?: string;
     readProvider?: ethers.Provider;
@@ -106,22 +87,12 @@ export function useCollateralBalances({
       return { valid: false, reason: "Invalid user address" };
     }
 
-    // Get provider (will fallback to RPC if needed)
+    // RPC provider is always available
     const readProvider = getReadProvider();
-    if (!readProvider) {
-      return { valid: false, reason: "No provider available" };
-    }
 
-    // Only validate chainId if we have one (RPC fallback won't have wallet chainId)
-    if (chainId && !EXPECTED_CHAIN_IDS.includes(chainId)) {
-      return {
-        valid: false,
-        reason: `Please connect to Base Sepolia (84532) or Base Mainnet (8453)`,
-      };
-    }
-
+    // Network validation simplified - RPC provider is always on correct network
     return { valid: true, readProvider };
-  }, [enabled, userAddress, chainId, getReadProvider]);
+  };
 
   // Fetch single token balance
   const fetchTokenBalance = async (
@@ -267,18 +238,12 @@ export function useCollateralBalances({
   // Auto-fetch on dependencies change  
   useEffect(() => {
     fetchBalances();
-  }, [userAddress, chainId, enabled, provider]);
+  }, [userAddress, chainId, enabled]);
 
-  // Periodic refresh
-  useEffect(() => {
-    if (!enabled) return;
-
-    const interval = setInterval(() => {
-      fetchBalances();
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [enabled, fetchBalances]);
+  // Removed aggressive 30s polling - balances update on:
+  // 1. Address/chainId/enabled change
+  // 2. Manual refetch() call after transactions
+  // 3. Parent component control if needed
 
   // Cleanup
   useEffect(() => {

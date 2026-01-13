@@ -5,31 +5,28 @@ import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
 import { safeContractCall } from "@/lib/wallet-keep-alive";
 
 export function useBtc1Balance() {
-  const { provider, readOnlyProvider, address } = useWeb3();
+  const { readProvider, address, chainId } = useWeb3();
   const [balance, setBalance] = useState(0);
   const [formattedBalance, setFormattedBalance] = useState("0.00");
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchBalance = async () => {
-    console.log('useBtc1Balance - address:', !!address, 'readOnlyProvider:', !!readOnlyProvider, 'provider:', !!provider);
     if (!address) {
-      console.log('useBtc1Balance - No address');
       return;
     }
     
-    // Use readOnlyProvider for read operations to avoid WalletConnect timeouts
-    const providerToUse = readOnlyProvider || provider;
+    // CRITICAL: ALWAYS use RPC provider for reads - NEVER WalletConnect
+    // This eliminates slow wallet communication for balance checks
+    const providerToUse = readProvider;
     if (!providerToUse) {
-      console.log('useBtc1Balance - No provider available');
+      console.log('useBtc1Balance - No RPC provider available');
       return;
     }
 
     try {
       setIsLoading(true);
       
-      // Add small delay to allow provider to stabilize after network change
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      // OPTIMIZED: Direct contract call - no artificial delays for speed
       // Verify we're on the correct network (Base Sepolia = 84532)
       const network = await providerToUse.getNetwork();
       console.log('useBtc1Balance - network chainId:', Number(network.chainId));
@@ -81,12 +78,12 @@ export function useBtc1Balance() {
   };
 
   useEffect(() => {
-    console.log('useBtc1Balance - useEffect triggered, address:', address);
     fetchBalance();
-    // Refresh every 15 seconds
-    const interval = setInterval(fetchBalance, 15000);
-    return () => clearInterval(interval);
-  }, [address, provider, readOnlyProvider]);
+    // Removed aggressive polling - balances update on:
+    // 1. Address or chainId change
+    // 2. Manual refetch() call after transactions
+    // 3. Parent component control via refetch()
+  }, [address, chainId]);
 
   return {
     balance,

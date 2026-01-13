@@ -167,9 +167,7 @@ export function useNetworkEnforcement({
       if (result.success) {
         console.log("✅ Network switched successfully");
         
-        // Wait for network to stabilize
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
+        // OPTIMIZED: Immediate re-check - no artificial delay
         // Re-check network
         const isValid = await checkNetwork();
         

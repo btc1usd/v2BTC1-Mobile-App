@@ -11,8 +11,9 @@ export default function TabLayout() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  const bottomPadding = Platform.OS === "web" ? 14 : Math.max(insets.bottom, 12);
-  const TAB_HEIGHT = 62 + bottomPadding;
+  // Tab bar at absolute bottom - icons positioned at 0 bottom
+  const bottomPadding = Platform.OS === "web" ? 0 : insets.bottom;
+  const TAB_HEIGHT = 60 + bottomPadding; // Reduced from 62 to 60 for tighter fit
 
   const TabBarBackground = () =>
     Platform.OS === "ios" ? (
@@ -47,14 +48,21 @@ export default function TabLayout() {
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: "600",
-          marginTop: 2,
+          marginTop: 0, // Removed margin for tighter spacing
+          marginBottom: 0,
+        },
+        tabBarItemStyle: {
+          paddingTop: 8, // Minimal top padding
+          paddingBottom: 0, // Zero bottom padding for icons
         },
         tabBarStyle: {
           position: "absolute",
           left: 16,
           right: 16,
-          bottom: bottomPadding - 6,
+          bottom: 0, // Position at absolute bottom
           height: TAB_HEIGHT,
+          paddingTop: 4, // Minimal top padding
+          paddingBottom: bottomPadding, // Only safe area padding at bottom
           borderRadius: 24,
           borderTopWidth: 0,
           elevation: 12,

@@ -98,11 +98,11 @@ export function LandingScreen() {
                   />
                 </View>
                 
-                <Text className="text-5xl font-bold text-foreground text-center mb-3">
+                <Text className="text-5xl font-bold text-center mb-3" style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000' }}>
                   BTC1
                 </Text>
-                <Text className="text-xl text-foreground text-center font-semibold mb-2">
-                  Bitcoin-Backed Stable Asset
+                <Text className="text-xl text-center font-semibold mb-2" style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000' }}>
+                  Bitcoin-Backed Coin
                 </Text>
                 <Text className="text-base text-muted text-center px-4">
                   With built-in Profit Sharing & Charity

@@ -5,7 +5,7 @@ import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
 import { safeContractCall } from "@/lib/wallet-keep-alive";
 
 export function useVaultStats() {
-  const { provider, readOnlyProvider } = useWeb3();
+  const { readProvider, chainId } = useWeb3();
   const [collateralRatio, setCollateralRatio] = useState("110.00");
   const [totalCollateralValue, setTotalCollateralValue] = useState(0);
   const [btcPrice, setBtcPrice] = useState(0);
@@ -13,20 +13,18 @@ export function useVaultStats() {
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchStats = async () => {
-    // Use readOnlyProvider for read operations to avoid WalletConnect timeouts
-    const providerToUse = readOnlyProvider || provider;
-    console.log('useVaultStats - providerToUse:', !!providerToUse, 'readOnlyProvider:', !!readOnlyProvider, 'provider:', !!provider);
+    // CRITICAL: ALWAYS use RPC provider for reads - NEVER WalletConnect
+    // This eliminates slow wallet communication for vault stats
+    const providerToUse = readProvider;
     if (!providerToUse) {
-      console.log('useVaultStats - No provider available');
+      console.log('useVaultStats - No RPC provider available');
       return;
     }
 
     try {
       setIsLoading(true);
       
-      // Add small delay to allow provider to stabilize after network change
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      // OPTIMIZED: Direct contract call - no artificial delays for speed
       // Verify we're on Base Sepolia testnet
       const network = await providerToUse.getNetwork();
       console.log('useVaultStats - network chainId:', Number(network.chainId));
@@ -246,9 +244,11 @@ export function useVaultStats() {
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 15000);
-    return () => clearInterval(interval);
-  }, [provider]);
+    // Removed aggressive polling - vault stats update on:
+    // 1. Component mount or chainId change
+    // 2. Manual refetch() call if needed
+    // 3. Parent component control
+  }, [chainId]);
 
   return {
     collateralRatio,
@@ -256,5 +256,6 @@ export function useVaultStats() {
     btcPrice,
     isHealthy,
     isLoading,
+    refetch: fetchStats,
   };
 }

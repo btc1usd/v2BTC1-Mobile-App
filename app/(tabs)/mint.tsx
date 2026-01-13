@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Linking,
+  AppState,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 
@@ -35,11 +36,10 @@ export default function MintScreen() {
     isConnected,
     chainId,
     signer,
-    provider,
-    readOnlyProvider,
+    wcProvider,
+    readProvider,
     switchChain,
   } = web3;
-  const wcProvider = web3.wcProvider;
   const { disconnectWallet } = useWallet();
 
   const [amount, setAmount] = useState("");
@@ -49,11 +49,29 @@ export default function MintScreen() {
   const [error, setError] = useState("");
   const [showNetworkModal, setShowNetworkModal] = useState(false);
   const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // Lock state during transaction
+  
+  // Scroll ref for auto-scroll to button
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // Keep loading state visible when app returns from wallet
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active" && isProcessing) {
+        console.log("🔄 App returned to foreground - keeping loading state");
+        // Keep the loading state - don't reset
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isProcessing]);
 
   const isOnCorrectNetwork = chainId === TARGET_CHAIN_ID;
 
   const { enforceNetwork } = useNetworkEnforcement({
-    provider,
+    provider: readProvider,
     wcProvider,
     chainId,
     isConnected,
@@ -67,7 +85,6 @@ export default function MintScreen() {
     isLoading: isBalancesLoading,
   } = useCollateralBalances({
     userAddress: address,
-    provider: readOnlyProvider,
     chainId,
     enabled: isConnected && !!address,
   });
@@ -116,7 +133,7 @@ export default function MintScreen() {
   };
 
   const handleMint = async () => {
-    if (!signer || !provider || !address) return;
+    if (!signer || !wcProvider || !address) return;
 
     // Check network before proceeding
     if (!isOnCorrectNetwork) {
@@ -136,46 +153,30 @@ export default function MintScreen() {
 
     try {
       setError("");
-      setStep("signing");
+      setStep("approving");
+      setIsProcessing(true); // Lock UI
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // CRITICAL: After network switch, we need a FRESH provider and signer
-      // The old provider/signer may still be pointing to the old network
-      let freshProvider = provider;
-      let freshSigner = signer;
-
-      // If wcProvider exists, recreate provider from it to ensure correct network
-      if (wcProvider) {
-        const { ethers } = await import("ethers");
-        freshProvider = new ethers.BrowserProvider(wcProvider);
-        
-        // Wake wallet connection
-        await freshProvider.send("eth_accounts", []);
-        
-        // OPTIMIZED: Removed delay - not needed with proper wallet wake
-        freshSigner = await freshProvider.getSigner();
-        
-        // Verify signer is on correct network
-        const network = await freshProvider.getNetwork();
-        console.log("Fresh signer network:", network.chainId.toString());
-      } else {
-        // Fallback: just get fresh signer from existing provider
-        await provider.send("eth_accounts", []);
-        freshSigner = await provider.getSigner();
-      }
+      // OPTIMIZED: Get signer directly - no session wake delay
+      console.log("🚀 Starting mint flow (lightning fast)...");
       
-      // Check if approval is needed (will show approving step)
-      setStep("approving");
+      const { ethers } = await import("ethers");
+      const freshProvider = new ethers.BrowserProvider(wcProvider);
+      const freshSigner = await freshProvider.getSigner();
 
+      console.log("📝 [UI] Calling mintBTC1WithPermit2...");
       const result = await mintBTC1WithPermit2(selectedToken.address, amount, freshSigner);
       
-      // After approval, switch to signing step (handled by mintBTC1WithPermit2)
-      setStep("signing");
+      console.log("✅ [UI] Mint result:", result.success, result.txHash);
 
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) {
+        console.error("❌ [UI] Mint failed:", result.error);
+        throw new Error(result.error);
+      }
 
       setTxHash(result.txHash!);
       setStep("success");
+      setIsProcessing(false); // Unlock UI
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       setTimeout(() => {
@@ -185,10 +186,13 @@ export default function MintScreen() {
         setTxHash("");
       }, 5000);
     } catch (e: any) {
-      console.error("Mint error:", e);
-      const msg = e.message?.includes("rejected") ? "Transaction cancelled" : e.message || "Transaction failed";
+      console.error("❌ [UI] Mint error caught:", e);
+      const msg = e.message?.includes("rejected") || e.message?.includes("user rejected") 
+        ? "Transaction cancelled" 
+        : e.message || "Transaction failed";
       setError(msg);
       setStep("error");
+      setIsProcessing(false); // Unlock UI
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setTimeout(() => setStep("idle"), 4000);
     }
@@ -243,28 +247,128 @@ export default function MintScreen() {
   }
 
   if (step === "approving" || step === "signing" || step === "minting") {
-    const titles: Record<string, string> = {
-      approving: "Approve Permit2",
-      signing: "Sign Permit",
-      minting: "Minting BTC1...",
-    };
-    const descriptions: Record<string, string> = {
-      approving: "Approve tokens for Permit2 (one-time)",
-      signing: "Sign the permit message in your wallet",
-      minting: "Transaction is being processed",
-    };
+    const stepInfo = {
+      approving: { title: "Approve Permit2", desc: "Approve tokens in your wallet", emoji: "📋", progress: 33 },
+      signing: { title: "Sign Permit", desc: "Sign the permit message", emoji: "✍️", progress: 66 },
+      minting: { title: "Confirming", desc: "Transaction confirming on-chain", emoji: "⚡", progress: 100 },
+    }[step]!;
+    
+    const isApproved = step === 'signing' || step === 'minting';
+    const isSigned = step === 'minting';
     
     return (
       <ScreenContainer className="items-center justify-center p-8">
-        <View className="items-center">
+        <View className="items-center w-full">
+          {/* Progress Steps */}
+          <View className="flex-row items-center justify-center mb-8 w-full px-4">
+            {/* Approve Step */}
+            <View className="items-center flex-1">
+              <View 
+                className={`w-14 h-14 rounded-full items-center justify-center shadow-lg ${
+                  isApproved ? 'bg-success' : step === 'approving' ? 'bg-primary' : 'bg-border'
+                }`}
+                style={{
+                  shadowColor: isApproved ? '#10b981' : step === 'approving' ? '#F7931A' : '#666',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.8,
+                  shadowRadius: 6,
+                  elevation: 8,
+                }}
+              >
+                {isApproved ? (
+                  <Text className="text-white font-bold text-3xl">✓</Text>
+                ) : (
+                  <Text className="text-2xl">📋</Text>
+                )}
+              </View>
+              <Text className={`text-xs mt-2 font-bold ${
+                isApproved ? 'text-success' : 'text-muted'
+              }`} style={{ opacity: isApproved ? 1 : 0.7 }}>Approve</Text>
+            </View>
+            
+            {/* Connecting Line 1 */}
+            <View 
+              className={`h-1.5 flex-1 mx-2 rounded-full ${
+                isApproved ? 'bg-success' : 'bg-border'
+              }`}
+              style={{
+                opacity: isApproved ? 1 : 0.4,
+              }}
+            />
+            
+            {/* Sign Step */}
+            <View className="items-center flex-1">
+              <View 
+                className={`w-14 h-14 rounded-full items-center justify-center shadow-lg ${
+                  isSigned ? 'bg-success' : step === 'signing' ? 'bg-primary' : 'bg-border'
+                }`}
+                style={{
+                  shadowColor: isSigned ? '#10b981' : step === 'signing' ? '#F7931A' : '#666',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.8,
+                  shadowRadius: 6,
+                  elevation: 8,
+                }}
+              >
+                {isSigned ? (
+                  <Text className="text-white font-bold text-3xl">✓</Text>
+                ) : (
+                  <Text className="text-2xl">✍️</Text>
+                )}
+              </View>
+              <Text className={`text-xs mt-2 font-bold ${
+                isSigned ? 'text-success' : step === 'signing' ? 'text-primary' : 'text-muted'
+              }`} style={{ opacity: isSigned || step === 'signing' ? 1 : 0.7 }}>Sign</Text>
+            </View>
+            
+            {/* Connecting Line 2 */}
+            <View 
+              className={`h-1.5 flex-1 mx-2 rounded-full ${
+                step === 'minting' ? 'bg-primary' : 'bg-border'
+              }`}
+              style={{
+                opacity: step === 'minting' ? 1 : 0.4,
+              }}
+            />
+            
+            {/* Confirm Step */}
+            <View className="items-center flex-1">
+              <View 
+                className={`w-14 h-14 rounded-full items-center justify-center shadow-lg ${
+                  step === 'minting' ? 'bg-primary' : 'bg-border'
+                }`}
+                style={{
+                  shadowColor: step === 'minting' ? '#F7931A' : '#666',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.8,
+                  shadowRadius: 6,
+                  elevation: 8,
+                }}
+              >
+                <Text className="text-2xl">⚡</Text>
+              </View>
+              <Text className={`text-xs mt-2 font-bold ${
+                step === 'minting' ? 'text-primary' : 'text-muted'
+              }`} style={{ opacity: step === 'minting' ? 1 : 0.7 }}>Confirm</Text>
+            </View>
+          </View>
+
+          {/* Spinner & Message */}
           <View className="w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-6">
             <ActivityIndicator size="large" color="#F7931A" />
           </View>
+          <Text className="text-2xl mb-3">{stepInfo.emoji}</Text>
           <Text className="text-xl font-bold text-foreground mb-2">
-            {titles[step]}
+            {stepInfo.title}
           </Text>
-          <Text className="text-sm text-muted text-center">
-            {descriptions[step]}
+          <Text className="text-sm text-muted text-center mb-4">
+            {stepInfo.desc}
+          </Text>
+          <Text className="text-xs text-muted/60 text-center px-8">
+            📱 Check your wallet app to continue...
+          </Text>
+          <Text className="text-xs text-muted/60 text-center px-8 mt-2">
+            Do not close this screen
           </Text>
         </View>
       </ScreenContainer>
@@ -309,9 +413,11 @@ export default function MintScreen() {
       <NetworkGuard>
         <ScreenContainer>
           <ScrollView
+            ref={scrollViewRef}
             className="flex-1"
             contentContainerStyle={{ paddingBottom: 40 }}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
             {/* Uniform Header - Wallet & Network */}
             <WalletHeader address={address} chainId={chainId} compact onDisconnect={disconnectWallet} />
@@ -381,9 +487,18 @@ export default function MintScreen() {
                 <TextInput
                   value={amount}
                   onChangeText={setAmount}
+                  onBlur={() => {
+                    // Auto-scroll to button when user finishes entering (keyboard dismisses)
+                    if (amount && Number(amount) > 0) {
+                      setTimeout(() => {
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                      }, 100);
+                    }
+                  }}
                   placeholder="0"
                   placeholderTextColor="#6B7280"
                   keyboardType="decimal-pad"
+                  returnKeyType="done"
                   className="flex-1 text-4xl font-bold text-foreground"
                 />
                 

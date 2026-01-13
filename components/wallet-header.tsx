@@ -56,91 +56,147 @@ export function WalletHeader({ address, chainId, onDisconnect, compact = false }
 
   const chainInfo = getChainInfo(chainId);
 
-  // Compact mode - optimized for space
+  // Compact mode - Beautiful modern design
   if (compact) {
     return (
-      <View className="px-6 pt-3 pb-2">
-        {/* First Row: Address and Network */}
-        <View className="flex-row items-center justify-between mb-2">
-          {/* Left: Address - Full display */}
+      <View className="px-6 pt-4 pb-3">
+        <View className="flex-row items-center justify-between">
+          {/* Left: Wallet Info with Gradient Background */}
           <TouchableOpacity
             onPress={handleCopyAddress}
-            className="flex-row items-center flex-1 mr-2"
+            className="flex-1 mr-3"
             activeOpacity={0.7}
           >
-            <View className="w-8 h-8 rounded-full bg-primary/20 items-center justify-center mr-2">
-              <Text className="text-base">👤</Text>
+            <View className="bg-gradient-to-r from-primary/10 to-success/10 rounded-2xl px-4 py-3 border border-primary/20">
+              <View className="flex-row items-center">
+                {/* Avatar with Gradient */}
+                <View className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/60 items-center justify-center mr-3 shadow-lg">
+                  <Text className="text-lg">👤</Text>
+                </View>
+                
+                {/* Address Info */}
+                <View className="flex-1">
+                  <Text className="text-sm font-bold text-foreground" numberOfLines={1}>
+                    {formatAddress(address)}
+                  </Text>
+                </View>
+              </View>
             </View>
-            <Text className="text-sm font-bold text-foreground" numberOfLines={1}>
-              {address}
-            </Text>
           </TouchableOpacity>
 
-          {/* Right: Network Badge */}
-          <View className="bg-surface rounded-full px-3 py-1.5 flex-row items-center border border-border">
-            <View className={`w-1.5 h-1.5 rounded-full ${chainInfo.color} mr-1.5`} />
-            <Text className="text-xs font-semibold text-foreground">
-              {chainInfo.name}
-            </Text>
+          {/* Right: Actions Column */}
+          <View className="gap-2">
+            {/* Network Badge with Glow */}
+            <View className="bg-surface rounded-xl px-3 py-2 border border-border shadow-sm">
+              <View className="flex-row items-center">
+                <View className={`w-2 h-2 rounded-full ${chainInfo.color} mr-2 shadow-md`} />
+                <Text className="text-xs font-bold text-foreground">
+                  {chainInfo.name}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Buttons Row */}
+            <View className="flex-row gap-2">
+              {/* Theme Toggle with Icon */}
+              <TouchableOpacity
+                onPress={handleToggleTheme}
+                className="bg-surface rounded-xl px-3 py-2 border border-border shadow-sm items-center justify-center"
+                activeOpacity={0.7}
+              >
+                <Text className="text-base">{colorScheme === "dark" ? "🌙" : "☀️"}</Text>
+              </TouchableOpacity>
+              
+              {/* Disconnect Button - White in Dark Mode */}
+              {onDisconnect && (
+                <TouchableOpacity
+                  onPress={handleDisconnect}
+                  className="bg-gradient-to-r from-destructive/30 to-destructive/20 rounded-xl px-3 py-2 border-2 border-destructive/60 shadow-lg items-center justify-center"
+                  activeOpacity={0.7}
+                >
+                  <Text 
+                    className="font-bold text-xl" 
+                    style={{ 
+                      color: colorScheme === 'dark' ? '#ffffff' : '#ef4444',
+                      textShadowColor: 'rgba(0,0,0,0.3)', 
+                      textShadowOffset: {width: 0, height: 1}, 
+                      textShadowRadius: 2 
+                    }}
+                  >⏻</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-        </View>
-
-        {/* Second Row: Theme Toggle and Disconnect */}
-        <View className="flex-row items-center justify-end gap-2">
-          {/* Theme Toggle */}
-          <TouchableOpacity
-            onPress={handleToggleTheme}
-            className="bg-surface w-8 h-8 rounded-full border border-border items-center justify-center"
-            activeOpacity={0.7}
-          >
-            <Text className="text-sm">{colorScheme === "dark" ? "🌙" : "☀️"}</Text>
-          </TouchableOpacity>
-          
-          {/* Disconnect Button */}
-          {onDisconnect && (
-            <TouchableOpacity
-              onPress={handleDisconnect}
-              className="bg-surface px-3 py-1.5 rounded-full border border-border"
-              activeOpacity={0.7}
-            >
-              <Text className="text-xs font-medium text-muted">Disconnect</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
     );
   }
 
-  // Full mode - original design
-
+  // Full mode - Beautiful card design
   return (
     <View className="px-6 pt-4 pb-3">
-      <View className="bg-surface rounded-2xl p-4 border border-border">
+      <View className="bg-gradient-to-br from-surface via-surface to-primary/5 rounded-3xl p-5 border-2 border-border shadow-xl">
         <View className="flex-row items-center justify-between">
-          {/* Left: Address */}
+          {/* Left: Wallet Info */}
           <TouchableOpacity
             onPress={handleCopyAddress}
-            className="flex-1 flex-row items-center"
+            className="flex-1 flex-row items-center mr-3"
             activeOpacity={0.7}
           >
-            <View className="w-10 h-10 rounded-full bg-primary/20 items-center justify-center mr-3">
-              <Text className="text-lg">👤</Text>
+            {/* Avatar with Gradient Ring */}
+            <View className="relative mr-3">
+              <View className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-success items-center justify-center shadow-lg">
+                <Text className="text-xl">👤</Text>
+              </View>
+              {/* Online Status Indicator */}
+              <View className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-success border-2 border-surface" />
             </View>
+            
             <View className="flex-1">
-              <Text className="text-xs text-muted mb-1">Connected Wallet</Text>
-              <Text className="text-sm font-bold text-foreground">
+              <Text className="text-xs text-muted font-semibold mb-1 uppercase tracking-wider">Connected Wallet</Text>
+              <Text className="text-base font-bold text-foreground">
                 {formatAddress(address)}
               </Text>
             </View>
           </TouchableOpacity>
 
-          {/* Right: Network Badge */}
-          <View className="flex-row items-center gap-2">
-            <View className="bg-background rounded-full px-3 py-2 flex-row items-center">
-              <View className={`w-2 h-2 rounded-full ${chainInfo.color} mr-2`} />
-              <Text className="text-xs font-semibold text-foreground">
+          {/* Right: Network & Actions */}
+          <View className="items-end gap-2">
+            {/* Network Badge */}
+            <View className="bg-background rounded-2xl px-4 py-2.5 flex-row items-center border border-border shadow-sm">
+              <View className={`w-2.5 h-2.5 rounded-full ${chainInfo.color} mr-2 shadow-lg`} />
+              <Text className="text-sm font-bold text-foreground">
                 {chainInfo.name}
               </Text>
+            </View>
+            
+            {/* Action Buttons */}
+            <View className="flex-row gap-2">
+              <TouchableOpacity
+                onPress={handleToggleTheme}
+                className="bg-background rounded-xl px-3 py-2 border border-border shadow-sm"
+                activeOpacity={0.7}
+              >
+                <Text className="text-base">{colorScheme === "dark" ? "🌙" : "☀️"}</Text>
+              </TouchableOpacity>
+              
+              {onDisconnect && (
+                <TouchableOpacity
+                  onPress={handleDisconnect}
+                  className="bg-gradient-to-r from-destructive/30 to-destructive/20 rounded-xl px-3 py-2 border-2 border-destructive/60 shadow-lg items-center justify-center"
+                  activeOpacity={0.7}
+                >
+                  <Text 
+                    className="font-bold text-2xl" 
+                    style={{ 
+                      color: colorScheme === 'dark' ? '#ffffff' : '#ef4444',
+                      textShadowColor: 'rgba(0,0,0,0.3)', 
+                      textShadowOffset: {width: 0, height: 1}, 
+                      textShadowRadius: 2 
+                    }}
+                  >⏻</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>

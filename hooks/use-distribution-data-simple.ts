@@ -5,7 +5,7 @@ import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
 import { fetchCurrentDistribution } from "@/lib/supabase";
 
 export function useDistributionData() {
-  const { provider } = useWeb3();
+  const { readProvider, chainId } = useWeb3();
   const [distributionCount, setDistributionCount] = useState(0);
   const [nextDistributionTime, setNextDistributionTime] = useState(0);
   const [timeUntilDistribution, setTimeUntilDistribution] = useState<string | null>(null);
@@ -29,26 +29,21 @@ export function useDistributionData() {
   };
 
   const fetchDistributionData = async () => {
-    if (!provider) return;
+    // CRITICAL: Use readProvider for all reads - NEVER WalletConnect
+    if (!readProvider) return;
 
     try {
       setIsLoading(true);
       
-      // Verify we're on Base Sepolia
-      const network = await provider.getNetwork();
-      if (Number(network.chainId) !== 84532) {
-        console.warn(`Wrong network: ${network.chainId}. Expected Base Sepolia (84532)`);
-        return;
-      }
-      
+      // OPTIMIZED: Direct contract call - no network check needed (RPC is always on correct network)
       const contract = new ethers.Contract(
         CONTRACT_ADDRESSES.WEEKLY_DISTRIBUTION,
         ABIS.WEEKLY_DISTRIBUTION,
-        provider
+        readProvider
       );
 
       // Check if contract exists
-      const code = await provider.getCode(CONTRACT_ADDRESSES.WEEKLY_DISTRIBUTION);
+      const code = await readProvider.getCode(CONTRACT_ADDRESSES.WEEKLY_DISTRIBUTION);
       if (code === '0x') {
         console.warn(`WeeklyDistribution contract not found at ${CONTRACT_ADDRESSES.WEEKLY_DISTRIBUTION}`);
         return;
@@ -103,9 +98,10 @@ export function useDistributionData() {
 
   useEffect(() => {
     fetchDistributionData();
-    const interval = setInterval(fetchDistributionData, 60000); // Every minute
-    return () => clearInterval(interval);
-  }, [provider]);
+    // OPTIMIZED: Removed 60s polling - distribution data updates on:
+    // 1. Component mount or chainId change
+    // 2. Manual refresh via pull-to-refresh in parent component
+  }, [readProvider, chainId]);
 
   return {
     distributionCount,

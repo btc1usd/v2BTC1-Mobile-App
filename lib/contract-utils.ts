@@ -259,59 +259,73 @@ export async function mintBTC1WithPermit2(
     });
 
     // Step 6: Sign the permit message using EIP-712
-    console.log("⏰ Waiting for signature (45s timeout)...");
-    console.log("📱 Opening wallet for signature");
-    
-    // OPTIMIZED: Open wallet before signing (industry standard)
+    // OPTIMIZED: Instant signature request with reasonable timeout
+    console.log("⚡ Requesting signature...");
     await openWalletApp('signature');
     
-    // Use optimized timeout (45s - Uniswap standard for signatures)
+    // 45s timeout - reasonable for user to sign
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
-      SIGNATURE_TIMEOUT,
-      "Permit2 signature"
+      45000, // 45s
+      "Permit2 signature",
+      false
     );
     
     console.log("✅ Permit2 signature obtained:", signature.slice(0, 20) + "...");
 
-    // Step 7: Call mintWithPermit2 on Vault contract
+    // CRITICAL OPTIMIZATION: Keep session hot between signature and transaction
+    // Pre-warm the transaction by preparing contract call immediately
+    console.log("🔥 Preparing transaction immediately...");
+    
     const vaultContract = new ethers.Contract(
       CONTRACT_ADDRESSES.VAULT,
       ABIS.VAULT,
       signer
     );
 
-    console.log("Calling mintWithPermit2...", {
-      collateral: collateralAddress,
-      amount: btcAmount.toString(),
-      permit: {
-        permitted: { token: permit.permitted.token, amount: permit.permitted.amount.toString() },
-        nonce: permit.nonce.toString(),
-        deadline: permit.deadline.toString(),
-      },
-      signatureLength: signature.length,
-    });
+    // Simultaneously: Open wallet + prepare transaction (parallel execution for speed)
+    console.log("📱 Opening wallet for instant transaction...");
+    await Promise.all([
+      openWalletApp('transaction'),
+      // Keep session alive with quick ping
+      (async () => {
+        try {
+          if (signer.provider && 'send' in signer.provider) {
+            await (signer.provider as any).send("eth_chainId", []);
+          }
+        } catch (e) {
+          console.warn("Session ping skipped:", e);
+        }
+      })()
+    ]);
 
-    console.log("📱 Opening wallet to confirm mint");
-    console.log("⏰ Waiting for transaction confirmation...");
+    console.log("📱 Sending transaction instantly...");
 
-    const receipt = await safeTransactionCall(
-      async () => {
-        const tx = await vaultContract.mintWithPermit2(
-          collateralAddress,
-          btcAmount,
-          permit,
-          signature
-        );
-        console.log("✅ MintWithPermit2 transaction sent:", tx.hash);
-        console.log("⏳ Waiting for blockchain confirmation...");
-        return await tx.wait();
-      },
-      provider,
-      signer,
-      "Mint BTC1 with Permit2",
-      'transaction'
-    );
+    // OPTIMIZED: Wallet already active, session warmed, send immediately
+    let tx;
+    try {
+      tx = await vaultContract.mintWithPermit2(
+        collateralAddress,
+        btcAmount,
+        permit,
+        signature
+      );
+      console.log("✅ Transaction sent:", tx.hash);
+    } catch (txError: any) {
+      // Check for session errors
+      if (txError.message?.includes("session topic") || txError.message?.includes("No matching key")) {
+        console.error("❌ Session expired during transaction");
+        throw new Error("Wallet session expired. Please reconnect your wallet and try again.");
+      }
+      throw txError;
+    }
+    
+    // Wait for confirmation with timeout
+    const receipt = await withTimeout(
+      () => tx.wait(),
+      90000, // 90s timeout
+      "Transaction confirmation"
+    ) as ethers.ContractTransactionReceipt;
 
     console.log("MintWithPermit2 confirmed:", receipt.hash);
 
@@ -534,20 +548,23 @@ export async function redeemBTC1WithPermit(
     });
 
     // Step 6: Sign the permit message using EIP-712
-    console.log("⏰ Waiting for signature (45s timeout)...");
-    console.log("📱 Opening wallet for signature");
-    
-    // OPTIMIZED: Open wallet before signing (industry standard)
+    // OPTIMIZED: Instant signature request with reasonable timeout
+    console.log("⚡ Requesting EIP-2612 signature...");
     await openWalletApp('signature');
     
-    // Use optimized timeout (45s - Uniswap standard)
+    // 45s timeout - reasonable for user to sign
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
-      SIGNATURE_TIMEOUT,
-      "EIP-2612 signature"
+      45000, // 45s
+      "EIP-2612 signature",
+      false
     );
     
     console.log("✅ EIP-2612 signature obtained:", signature.slice(0, 20) + "...");
+
+    // CRITICAL OPTIMIZATION: Keep session hot between signature and transaction
+    // Pre-warm the transaction by preparing contract call immediately
+    console.log("🔥 Preparing transaction immediately...");
 
     // Step 7: Split signature into v, r, s components
     const sig = ethers.Signature.from(signature);
@@ -564,35 +581,51 @@ export async function redeemBTC1WithPermit(
       signer
     );
 
-    console.log("Calling redeemWithPermit...", {
-      btc1Amount: btc1Amount.toString(),
-      collateral: collateralAddress,
-      deadline: deadline.toString(),
-      v: sig.v,
-    });
+    // Simultaneously: Open wallet + prepare transaction (parallel execution for speed)
+    console.log("📱 Opening wallet for instant transaction...");
+    await Promise.all([
+      openWalletApp('transaction'),
+      // Keep session alive with quick ping
+      (async () => {
+        try {
+          if (signer.provider && 'send' in signer.provider) {
+            await (signer.provider as any).send("eth_chainId", []);
+          }
+        } catch (e) {
+          console.warn("Session ping skipped:", e);
+        }
+      })()
+    ]);
 
-    console.log("📱 Opening wallet to confirm redeem");
-    console.log("⏰ Waiting for transaction confirmation...");
+    console.log("📱 Sending transaction instantly...");
 
-    const receipt = await safeTransactionCall(
-      async () => {
-        const tx = await vaultContract.redeemWithPermit(
-          btc1Amount,
-          collateralAddress,
-          deadline,
-          sig.v,
-          sig.r,
-          sig.s
-        );
-        console.log("✅ RedeemWithPermit transaction sent:", tx.hash);
-        console.log("⏳ Waiting for blockchain confirmation...");
-        return await tx.wait();
-      },
-      provider,
-      signer,
-      "Redeem BTC1 with Permit",
-      'transaction'
-    );
+    // OPTIMIZED: Wallet already active, session warmed, send immediately
+    let tx;
+    try {
+      tx = await vaultContract.redeemWithPermit(
+        btc1Amount,
+        collateralAddress,
+        deadline,
+        sig.v,
+        sig.r,
+        sig.s
+      );
+      console.log("✅ Transaction sent:", tx.hash);
+    } catch (txError: any) {
+      // Check for session errors
+      if (txError.message?.includes("session topic") || txError.message?.includes("No matching key")) {
+        console.error("❌ Session expired during transaction");
+        throw new Error("Wallet session expired. Please reconnect your wallet and try again.");
+      }
+      throw txError;
+    }
+    
+    // Wait for confirmation with timeout
+    const receipt = await withTimeout(
+      () => tx.wait(),
+      90000, // 90s timeout
+      "Transaction confirmation"
+    ) as ethers.ContractTransactionReceipt;
 
     console.log("RedeemWithPermit confirmed:", receipt.hash);
 
