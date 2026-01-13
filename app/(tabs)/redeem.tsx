@@ -10,6 +10,7 @@ import {
   AppState,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import { ethers } from "ethers"; // OPTIMIZATION: Top-level import
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useWeb3 } from "@/lib/web3-walletconnect-v2";
@@ -31,7 +32,6 @@ export default function RedeemScreen() {
     address,
     isConnected,
     chainId,
-    signer,
     wcProvider,
     readProvider,
   } = web3;
@@ -42,23 +42,17 @@ export default function RedeemScreen() {
   const [step, setStep] = useState<RedeemStep>("idle");
   const [txHash, setTxHash] = useState("");
   const [error, setError] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false); // Lock state during transaction
+  const [isProcessing, setIsProcessing] = useState(false); 
   
-  // Scroll ref for auto-scroll to button
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Keep loading state visible when app returns from wallet
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active" && isProcessing) {
-        console.log("🔄 App returned to foreground - keeping loading state");
-        // Keep the loading state - don't reset
+        // App returned
       }
     });
-
-    return () => {
-      subscription.remove();
-    };
+    return () => subscription.remove();
   }, [isProcessing]);
 
   const { enforceNetwork } = useNetworkEnforcement({
@@ -72,7 +66,6 @@ export default function RedeemScreen() {
   const { balance, formattedBalance } = useBtc1Balance();
   const hasBalance = balance > 0;
 
-  // Redeem calculation
   const redeemOutput = useMemo(() => {
     if (!amount || Number(amount) <= 0) {
       return { out: "0.00000000", fee: "0.00000000", net: "0.00000000", type: "stable" };
@@ -81,8 +74,6 @@ export default function RedeemScreen() {
     const btc1Amount = Number(amount);
     const ratioNum = Math.max(Number(collateralRatio) / 100, 1.1);
     
-    // Stable redemption (CR >= 110%): 1:1
-    // Stress redemption (CR < 110%): CR * 0.90
     let usdValue = btc1Amount;
     let redeemType = "stable";
     
@@ -93,7 +84,7 @@ export default function RedeemScreen() {
     }
     
     const collateralOut = usdValue / (btcPrice || 100000);
-    const devFee = collateralOut * 0.001; // 0.1%
+    const devFee = collateralOut * 0.001;
     const netAmount = collateralOut - devFee;
     
     return {
@@ -107,7 +98,7 @@ export default function RedeemScreen() {
   const canRedeem = amount && Number(amount) > 0 && Number(amount) <= balance && step === "idle";
 
   const handleRedeem = async () => {
-    if (!signer || !wcProvider || !address) return;
+    if (!wcProvider || !address) return;
 
     const ok = await enforceNetwork("Redeem BTC1");
     if (!ok) return;
@@ -121,29 +112,23 @@ export default function RedeemScreen() {
     try {
       setError("");
       setStep("signing");
-      setIsProcessing(true); // Lock UI
+      setIsProcessing(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // OPTIMIZED: Get signer directly - no session wake delay
-      console.log("🚀 Starting redeem flow (lightning fast)...");
+      console.log("🚀 Starting redeem flow (Instant)...");
       
-      const { ethers } = await import("ethers");
+      // OPTIMIZATION: Instant provider creation, no dynamic import
       const freshProvider = new ethers.BrowserProvider(wcProvider);
       const freshSigner = await freshProvider.getSigner();
 
-      console.log("📝 [UI] Calling redeemBTC1WithPermit...");
+      // OPTIMIZATION: Parallel execution in utility
       const result = await redeemBTC1WithPermit(amount, selectedToken.address, freshSigner);
       
-      console.log("✅ [UI] Redeem result:", result.success, result.txHash);
-
-      if (!result.success) {
-        console.error("❌ [UI] Redeem failed:", result.error);
-        throw new Error(result.error);
-      }
+      if (!result.success) throw new Error(result.error);
 
       setTxHash(result.txHash!);
       setStep("success");
-      setIsProcessing(false); // Unlock UI
+      setIsProcessing(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       setTimeout(() => {
@@ -152,13 +137,13 @@ export default function RedeemScreen() {
         setTxHash("");
       }, 5000);
     } catch (e: any) {
-      console.error("❌ [UI] Redeem error caught:", e);
+      console.error("❌ Redeem error:", e);
       const msg = e.message?.includes("rejected") || e.message?.includes("user rejected") 
         ? "Transaction cancelled" 
         : e.message || "Transaction failed";
       setError(msg);
       setStep("error");
-      setIsProcessing(false); // Unlock UI
+      setIsProcessing(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setTimeout(() => setStep("idle"), 4000);
     }
@@ -169,9 +154,6 @@ export default function RedeemScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // GUARDS
-  // ─────────────────────────────────────────────────────────────
   if (!isConnected) {
     return (
       <ScreenContainer className="items-center justify-center p-8">
@@ -180,9 +162,7 @@ export default function RedeemScreen() {
             <Text className="text-4xl">🔐</Text>
           </View>
           <Text className="text-2xl font-bold text-foreground mb-2">Connect Wallet</Text>
-          <Text className="text-base text-muted text-center">
-            Connect your wallet to redeem BTC1 tokens
-          </Text>
+          <Text className="text-base text-muted text-center">Connect your wallet to redeem BTC1 tokens</Text>
         </View>
       </ScreenContainer>
     );
@@ -196,9 +176,7 @@ export default function RedeemScreen() {
             <Text className="text-5xl">✓</Text>
           </View>
           <Text className="text-2xl font-bold text-foreground mb-2">Redeem Successful!</Text>
-          <Text className="text-base text-muted text-center mb-2">
-            You received ~{redeemOutput.net} {selectedToken.symbol}
-          </Text>
+          <Text className="text-base text-muted text-center mb-2">You received ~{redeemOutput.net} {selectedToken.symbol}</Text>
           {txHash && (
             <TouchableOpacity
               onPress={() => Linking.openURL(getTxUrl(txHash, chainId === 84532))}
@@ -216,65 +194,17 @@ export default function RedeemScreen() {
     return (
       <ScreenContainer className="items-center justify-center p-8">
         <View className="items-center w-full">
-          {/* Progress Steps */}
-          <View className="flex-row items-center justify-center mb-8 w-full px-4">
-            {/* Sign Step */}
-            <View className="items-center flex-1">
-              <View 
-                className="w-14 h-14 rounded-full items-center justify-center bg-primary shadow-lg"
-                style={{
-                  shadowColor: '#F7931A',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.8,
-                  shadowRadius: 6,
-                  elevation: 8,
-                }}
-              >
-                <Text className="text-2xl">✍️</Text>
-              </View>
-              <Text className="text-xs mt-2 font-bold text-primary" style={{ opacity: 1 }}>Sign</Text>
-            </View>
-            
-            {/* Connecting Line */}
-            <View 
-              className="h-1.5 flex-1 mx-2 rounded-full bg-border"
-              style={{ opacity: 0.4 }}
-            />
-            
-            {/* Confirm Step */}
-            <View className="items-center flex-1">
-              <View 
-                className="w-14 h-14 rounded-full items-center justify-center bg-border shadow-lg"
-                style={{
-                  shadowColor: '#666',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.6,
-                  shadowRadius: 4,
-                  elevation: 4,
-                }}
-              >
-                <Text className="text-2xl">⚡</Text>
-              </View>
-              <Text className="text-xs mt-2 font-bold text-muted" style={{ opacity: 0.7 }}>Confirm</Text>
-            </View>
-          </View>
-
-          {/* Spinner & Message */}
-          <View className="w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-6">
+          <View className="w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-6 relative">
             <ActivityIndicator size="large" color="#F7931A" />
+            <Text className="absolute -bottom-1 text-xl">✍️</Text>
           </View>
-          <Text className="text-2xl mb-3">✍️</Text>
-          <Text className="text-xl font-bold text-foreground mb-2">
-            Sign & Confirm
-          </Text>
+          
+          <Text className="text-xl font-bold text-foreground mb-2">Processing</Text>
           <Text className="text-sm text-muted text-center mb-4">
-            Sign the permit and confirm transaction in your wallet
+             Check your wallet to sign the request.
           </Text>
           <Text className="text-xs text-muted/60 text-center px-8">
-            📱 Check your wallet app to continue...
-          </Text>
-          <Text className="text-xs text-muted/60 text-center px-8 mt-2">
-            Do not close this screen
+            Lightning Fast Redemption Active ⚡
           </Text>
         </View>
       </ScreenContainer>
@@ -290,10 +220,7 @@ export default function RedeemScreen() {
           </View>
           <Text className="text-xl font-bold text-foreground mb-2">Transaction Failed</Text>
           <Text className="text-sm text-muted text-center mb-4">{error}</Text>
-          <TouchableOpacity
-            onPress={() => setStep("idle")}
-            className="bg-primary px-6 py-3 rounded-full"
-          >
+          <TouchableOpacity onPress={() => setStep("idle")} className="bg-primary px-6 py-3 rounded-full">
             <Text className="text-white font-semibold">Try Again</Text>
           </TouchableOpacity>
         </View>
@@ -301,13 +228,9 @@ export default function RedeemScreen() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Main UI
-  // ─────────────────────────────────────────────────────────────
   return (
     <NetworkGuard>
       <ScreenContainer>
-        {/* Uniform Header - Wallet & Network */}
         <WalletHeader address={address} chainId={chainId} compact onDisconnect={disconnectWallet} />
           
         <ScrollView
@@ -317,30 +240,22 @@ export default function RedeemScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Header */}
           <View className="px-6 pt-2 pb-2">
             <NetworkBanner chainId={chainId} wcProvider={wcProvider} />
           </View>
 
           <View className="px-6">
             <Text className="text-3xl font-bold text-foreground mb-1">Redeem BTC1</Text>
-            <Text className="text-sm text-muted mb-6">
-              Burn BTC1 coins to withdraw Bitcoin collateral
-            </Text>
+            <Text className="text-sm text-muted mb-6">Burn BTC1 coins to withdraw Bitcoin collateral</Text>
 
-            {/* ───────── BURN CARD ───────── */}
+            {/* BURN CARD */}
             <View className="bg-surface rounded-3xl p-5 mb-3 border border-border">
               <View className="flex-row justify-between items-center mb-4">
                 <Text className="text-xs font-medium text-muted uppercase tracking-wide">You Burn</Text>
                 <View className="flex-row items-center">
-                  <Text className="text-xs text-muted mr-2">
-                    Balance: {Number(formattedBalance).toFixed(4)}
-                  </Text>
+                  <Text className="text-xs text-muted mr-2">Balance: {Number(formattedBalance).toFixed(4)}</Text>
                   {hasBalance && (
-                    <TouchableOpacity
-                      onPress={setMaxAmount}
-                      className="bg-primary/10 px-2 py-1 rounded-md"
-                    >
+                    <TouchableOpacity onPress={setMaxAmount} className="bg-primary/10 px-2 py-1 rounded-md">
                       <Text className="text-xs font-bold text-primary">MAX</Text>
                     </TouchableOpacity>
                   )}
@@ -352,11 +267,8 @@ export default function RedeemScreen() {
                   value={amount}
                   onChangeText={setAmount}
                   onBlur={() => {
-                    // Auto-scroll to button when user finishes entering (keyboard dismisses)
                     if (amount && Number(amount) > 0) {
-                      setTimeout(() => {
-                        scrollViewRef.current?.scrollToEnd({ animated: true });
-                      }, 100);
+                      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
                     }
                   }}
                   placeholder="0"
@@ -381,14 +293,13 @@ export default function RedeemScreen() {
               )}
             </View>
 
-            {/* Swap Arrow */}
             <View className="items-center -my-2 z-10">
               <View className="w-10 h-10 rounded-full bg-surface border-4 border-background items-center justify-center">
                 <Text className="text-lg">↓</Text>
               </View>
             </View>
 
-            {/* ───────── RECEIVE CARD ───────── */}
+            {/* RECEIVE CARD */}
             <View className="bg-surface rounded-3xl p-5 mb-6 border border-border">
               <View className="flex-row justify-between items-center mb-4">
                 <Text className="text-xs font-medium text-muted uppercase tracking-wide">You Receive</Text>
@@ -408,14 +319,11 @@ export default function RedeemScreen() {
               </View>
             </View>
 
-            {/* ───────── COLLATERAL SELECTION ───────── */}
-            <Text className="text-xs font-medium text-muted uppercase tracking-wide mb-3">
-              Select Collateral
-            </Text>
+            {/* COLLATERAL SELECTION */}
+            <Text className="text-xs font-medium text-muted uppercase tracking-wide mb-3">Select Collateral</Text>
             <View className="flex-row gap-2 mb-6">
               {COLLATERAL_TOKENS.map((token) => {
                 const isSelected = token.symbol === selectedToken.symbol;
-
                 return (
                   <TouchableOpacity
                     key={token.symbol}
@@ -423,26 +331,18 @@ export default function RedeemScreen() {
                       setSelectedToken(token);
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     }}
-                    className={`flex-1 p-4 rounded-2xl border-2 ${
-                      isSelected
-                        ? "bg-primary/10 border-primary"
-                        : "bg-surface border-border"
-                    }`}
+                    className={`flex-1 p-4 rounded-2xl border-2 ${isSelected ? "bg-primary/10 border-primary" : "bg-surface border-border"}`}
                   >
                     <View className="flex-row items-center justify-between mb-1">
-                      <Text className={`font-bold ${isSelected ? "text-primary" : "text-foreground"}`}>
-                        {token.symbol}
-                      </Text>
+                      <Text className={`font-bold ${isSelected ? "text-primary" : "text-foreground"}`}>{token.symbol}</Text>
                     </View>
-                    <Text className="text-xs text-muted" numberOfLines={1}>
-                      {token.name}
-                    </Text>
+                    <Text className="text-xs text-muted" numberOfLines={1}>{token.name}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            {/* ───────── DETAILS CARD ───────── */}
+            {/* DETAILS CARD */}
             <View className="bg-surface rounded-2xl p-4 mb-6 border border-border">
               <View className="flex-row justify-between items-center py-2">
                 <Text className="text-sm text-muted">Redeem Type</Text>
@@ -452,49 +352,23 @@ export default function RedeemScreen() {
                   </Text>
                 </View>
               </View>
-              
               <View className="h-px bg-border my-1" />
-              
-              <View className="flex-row justify-between items-center py-2">
-                <Text className="text-sm text-muted">Collateral Ratio</Text>
-                {isVaultLoading ? (
-                  <ActivityIndicator size="small" />
-                ) : (
-                  <Text className="text-sm font-semibold text-foreground">{collateralRatio || "120"}%</Text>
-                )}
-              </View>
-              
-              <View className="h-px bg-border my-1" />
-              
-              <View className="flex-row justify-between items-center py-2">
-                <Text className="text-sm text-muted">BTC Price</Text>
-                <Text className="text-sm font-semibold text-foreground">
-                  ${(btcPrice || 100000).toLocaleString()}
-                </Text>
-              </View>
-              
-              <View className="h-px bg-border my-1" />
-              
               <View className="flex-row justify-between items-center py-2">
                 <Text className="text-sm text-muted">Dev Fee</Text>
                 <Text className="text-sm font-semibold text-foreground">0.1%</Text>
               </View>
-              
               <View className="h-px bg-border my-1" />
-              
               <View className="flex-row justify-between items-center py-2">
                 <Text className="text-sm text-muted">Network</Text>
                 <Text className="text-sm font-semibold text-success">Base Sepolia</Text>
               </View>
             </View>
 
-            {/* ───────── REDEEM BUTTON ───────── */}
+            {/* REDEEM BUTTON */}
             <TouchableOpacity
               onPress={handleRedeem}
               disabled={!canRedeem}
-              className={`py-5 rounded-2xl items-center ${
-                canRedeem ? "bg-primary" : "bg-muted/30"
-              }`}
+              className={`py-5 rounded-2xl items-center ${canRedeem ? "bg-primary" : "bg-muted/30"}`}
             >
               <Text className={`text-lg font-bold ${canRedeem ? "text-white" : "text-muted"}`}>
                 {!amount || Number(amount) <= 0
@@ -505,18 +379,15 @@ export default function RedeemScreen() {
               </Text>
             </TouchableOpacity>
 
-            {/* Error */}
             {error && step === "idle" && (
               <View className="mt-4 p-4 bg-destructive/10 rounded-xl">
                 <Text className="text-sm text-destructive text-center">{error}</Text>
               </View>
             )}
 
-            {/* Info */}
             <View className="mt-6 p-4 bg-primary/5 rounded-xl border border-primary/20">
               <Text className="text-xs text-muted text-center leading-5">
-                💡 Redemption burns BTC1 tokens and returns collateral. 
-                No separate approval needed — uses EIP-2612 Permit for gasless signatures.
+                💡 Uses EIP-2612 Permit for gasless signatures.
               </Text>
             </View>
           </View>

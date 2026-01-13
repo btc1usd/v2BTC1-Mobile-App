@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 7.8.0"
+    "version": ">= 7.8.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "preview": {
@@ -18,6 +19,10 @@
             "node_modules"
           ]
         }
+      },
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release"
       }
     },
     "development": {
@@ -25,12 +30,28 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
+      },
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Debug"
       }
     },
     "production": {
       "pnpm": "9.12.0",
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-play-service-account.json",
+        "track": "internal"
       }
     }
   }
