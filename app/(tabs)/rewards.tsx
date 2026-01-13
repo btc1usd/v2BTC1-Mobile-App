@@ -9,6 +9,7 @@ import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
 import { WalletHeader } from "@/components/wallet-header";
 import { useWallet } from "@/hooks/use-wallet-wc";
+import { ErrorModal } from "@/components/error-modal";
 import {
   fetchUserMerkleProof,
   fetchUserUnclaimedRewards,
@@ -35,6 +36,8 @@ export default function RewardsScreen() {
   const [unclaimedRewardsList, setUnclaimedRewardsList] = useState<MerkleClaim[]>([]);
   const [totalEarned, setTotalEarned] = useState("0");
   const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   
   useEffect(() => {
     const fetchRewards = async () => {
@@ -233,14 +236,26 @@ export default function RewardsScreen() {
       console.error('[Claim] Error:', err);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       
-      // If error after optimistic update, revert by refreshing
-      if (err.message?.includes('already claimed')) {
+      // Graceful error messages
+      let userMessage = "Unable to claim rewards. Please try again.";
+      
+      if (err.message?.includes('rejected') || err.message?.includes('user rejected') || err.message?.includes('ACTION_REJECTED')) {
+        userMessage = "You cancelled the claim. No worries, your rewards are safe!";
+      } else if (err.message?.includes('already claimed')) {
+        userMessage = "This reward has already been claimed. Refreshing your rewards...";
         console.log('[Claim] Already claimed - forcing refresh to sync state');
         setLastRefreshTime(Date.now());
         await onRefresh();
+      } else if (err.message?.includes('timeout') || err.message?.includes('timed out')) {
+        userMessage = "Claim took too long. Please ensure your wallet app is open and try again.";
+      } else if (err.message?.includes('session') || err.message?.includes('topic')) {
+        userMessage = "Wallet connection lost. Please reconnect your wallet and try again.";
+      } else if (err.message) {
+        userMessage = err.message;
       }
       
-      alert(`Claim failed: ${err.message || "Unknown error"}`);
+      setErrorMessage(userMessage);
+      setShowErrorModal(true);
     } finally {
       setClaimingDistributionId(null);
     }
@@ -436,6 +451,14 @@ export default function RewardsScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Error Modal */}
+      <ErrorModal
+        visible={showErrorModal}
+        title="Claim Failed"
+        message={errorMessage}
+        onClose={() => setShowErrorModal(false)}
+      />
     </ScreenContainer>
   );
 }

@@ -24,6 +24,7 @@ import { NetworkGuard } from "@/components/network-guard";
 import { WalletHeader } from "@/components/wallet-header";
 import { NetworkSwitchModal } from "@/components/network-switch-modal";
 import { useWallet } from "@/hooks/use-wallet-wc";
+import { ErrorModal } from "@/components/error-modal";
 
 // Unified steps since contract-utils handles the flow atomically
 type MintStep = "idle" | "processing" | "success" | "error";
@@ -48,6 +49,8 @@ export default function MintScreen() {
   const [step, setStep] = useState<MintStep>("idle");
   const [txHash, setTxHash] = useState("");
   const [error, setError] = useState("");
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [showNetworkModal, setShowNetworkModal] = useState(false);
   const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false); 
@@ -139,7 +142,8 @@ export default function MintScreen() {
     if (!ok) return;
 
     if (Number(amount) > Number(balance)) {
-      setError("Insufficient balance");
+      setErrorMessage("You don't have enough " + selectedToken.symbol + " to complete this mint.");
+      setShowErrorModal(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -174,10 +178,24 @@ export default function MintScreen() {
       }, 5000);
     } catch (e: any) {
       console.error("❌ Mint error:", e);
-      const msg = e.message?.includes("rejected") || e.message?.includes("user rejected") 
-        ? "Transaction cancelled" 
-        : e.message || "Transaction failed";
-      setError(msg);
+      
+      // Graceful error messages
+      let userMessage = "Something went wrong. Please try again.";
+      
+      if (e.message?.includes("rejected") || e.message?.includes("user rejected") || e.message?.includes("ACTION_REJECTED")) {
+        userMessage = "You cancelled the transaction. No worries, your funds are safe!";
+      } else if (e.message?.includes("insufficient")) {
+        userMessage = "Insufficient balance to complete this transaction.";
+      } else if (e.message?.includes("timeout") || e.message?.includes("timed out")) {
+        userMessage = "Transaction took too long. Please ensure your wallet app is open and try again.";
+      } else if (e.message?.includes("session") || e.message?.includes("topic")) {
+        userMessage = "Wallet connection lost. Please reconnect your wallet and try again.";
+      } else if (e.message) {
+        userMessage = e.message;
+      }
+      
+      setErrorMessage(userMessage);
+      setShowErrorModal(true);
       setStep("error");
       setIsProcessing(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -498,6 +516,14 @@ export default function MintScreen() {
           </ScrollView>
         </ScreenContainer>
       </NetworkGuard>
+
+      {/* Error Modal */}
+      <ErrorModal
+        visible={showErrorModal}
+        title="Mint Failed"
+        message={errorMessage}
+        onClose={() => setShowErrorModal(false)}
+      />
     </>
   );
 }

@@ -13,6 +13,7 @@ import { useBtc1Balance } from "@/hooks/use-btc1-balance-simple";
 import { useVaultStats } from "@/hooks/use-vault-stats-simple";
 import { useDistributionData } from "@/hooks/use-distribution-data-simple";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
@@ -51,35 +52,42 @@ export function DashboardScreen() {
   const { timeUntilDistribution, isLoading: isLoadingDist } = useDistributionData();
 
   // Fetch available rewards
-  useEffect(() => {
-    const fetchRewards = async () => {
-      if (!readProvider || !address || chainId !== 84532) {
-        return;
-      }
-      
-      try {
-        setIsLoadingRewards(true);
-        const unclaimed = await fetchUserUnclaimedRewards(address, readProvider);
-        
-        if (unclaimed.length > 0) {
-          const total = unclaimed.reduce((sum, claim) => {
-            return sum + BigInt(claim.amount);
-          }, BigInt(0));
-          const totalFormatted = ethers.formatUnits(total, 8);
-          setAvailableRewards(totalFormatted);
-        } else {
-          setAvailableRewards("0");
-        }
-      } catch (error) {
-        console.error('Error fetching rewards:', error);
-        setAvailableRewards("0");
-      } finally {
-        setIsLoadingRewards(false);
-      }
-    };
+  const fetchRewards = async () => {
+    if (!readProvider || !address || chainId !== 84532) {
+      return;
+    }
     
+    try {
+      setIsLoadingRewards(true);
+      const unclaimed = await fetchUserUnclaimedRewards(address, readProvider);
+      
+      if (unclaimed.length > 0) {
+        const total = unclaimed.reduce((sum, claim) => {
+          return sum + BigInt(claim.amount);
+        }, BigInt(0));
+        const totalFormatted = ethers.formatUnits(total, 8);
+        setAvailableRewards(totalFormatted);
+      } else {
+        setAvailableRewards("0");
+      }
+    } catch (error) {
+      console.error('Error fetching rewards:', error);
+      setAvailableRewards("0");
+    } finally {
+      setIsLoadingRewards(false);
+    }
+  };
+
+  useEffect(() => {
     fetchRewards();
   }, [readProvider, address, chainId]);
+
+  // Refresh rewards when screen comes into focus (e.g., after claiming on rewards page)
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchRewards();
+    }, [readProvider, address, chainId])
+  );
 
   // Fetch total supply
   useEffect(() => {
@@ -236,7 +244,7 @@ export function DashboardScreen() {
           <View className="bg-surface rounded-3xl p-6 mb-6 border border-border">
             <View className="flex-row justify-between items-center mb-4">
               <Text className="text-xs font-medium text-muted uppercase tracking-wide">
-                Available Rewards
+                Total Available to Claim
               </Text>
               <TouchableOpacity
                 onPress={() => handleNavigate("/rewards")}
@@ -274,7 +282,7 @@ export function DashboardScreen() {
           <View className="flex-row gap-3 mb-6">
             <TouchableOpacity
               onPress={() => handleNavigate("/mint")}
-              className="flex-1 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-4 items-center border-2 border-primary/30 shadow-lg"
+              className="flex-1 bg-surface rounded-2xl p-4 items-center border border-border"
             >
               <View className="w-12 h-12 rounded-full bg-primary/20 items-center justify-center mb-2">
                 <Text className="text-2xl">🏛️</Text>
@@ -294,7 +302,7 @@ export function DashboardScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleNavigate("/redeem")}
-              className="flex-1 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-4 items-center border-2 border-primary/30 shadow-lg"
+              className="flex-1 bg-surface rounded-2xl p-4 items-center border border-border"
             >
               <View className="w-12 h-12 rounded-full bg-primary/20 items-center justify-center mb-2">
                 <Text className="text-2xl">💸</Text>
@@ -314,7 +322,7 @@ export function DashboardScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleNavigate("/rewards")}
-              className="flex-1 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-4 items-center border-2 border-primary/30 shadow-lg"
+              className="flex-1 bg-surface rounded-2xl p-4 items-center border border-border"
             >
               <View className="w-12 h-12 rounded-full bg-primary/20 items-center justify-center mb-2">
                 <Text className="text-2xl">🎁</Text>
