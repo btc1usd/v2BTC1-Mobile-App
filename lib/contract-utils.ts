@@ -92,6 +92,10 @@ export async function mintBTC1WithPermit2(
   permit2Address: string = "0x000000000022D473030F116dDEE9F6B43aC78BA3"
 ): Promise<TransactionResult> {
   try {
+    // INSTANT: Wake wallet IMMEDIATELY at start (parallel with setup)
+    console.log("📱 Waking wallet early...");
+    openWalletApp('signature').catch(() => {}); // Non-blocking, starts wallet launch
+    
     // 1. Eagerly parse amount and setup contracts (Synchronous)
     const btcAmount = ethers.parseUnits(amount, 8);
     const provider = signer.provider!;
@@ -173,9 +177,9 @@ export async function mintBTC1WithPermit2(
     const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
     console.log("⚡ Vault contract ready for instant transaction");
 
-    // 6. Request Signature (Optimized Flow - Open wallet in background)
+    // 6. Request Signature (Optimized Flow - wallet already waking up)
     console.log("⚡ Requesting signature...");
-    openWalletApp('signature').catch(() => {}); // Fire-and-forget for instant UX
+    // Note: Wallet already opening from initial wake-up call
     
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
@@ -187,11 +191,26 @@ export async function mintBTC1WithPermit2(
     // 7. HOT PATH: Transaction Execution (INSTANT - everything precomputed)
     console.log("🚀 Broadcasting transaction...");
 
-    // Fire-and-forget: Open wallet in background (non-blocking)
-    openWalletApp('transaction').catch(() => {});
+    // HOT SESSION: Ping WalletConnect to ensure session is active (instant display)
+    try {
+      const wcProvider = (signer.provider as any);
+      if (wcProvider?.request) {
+        await Promise.race([
+          wcProvider.request({ method: "eth_chainId" }),
+          new Promise(resolve => setTimeout(resolve, 100)) // 100ms max
+        ]);
+        console.log("✅ WC session hot");
+      }
+    } catch { /* Ignore ping errors */ }
+
+    // Open wallet IMMEDIATELY (before transaction call)
+    const walletOpenPromise = openWalletApp('transaction').catch(() => {});
     
-    // Send TX INSTANTLY - contract and all data already prepared
-    const tx = await vaultContract.mintWithPermit2(collateralAddress, btcAmount, permit, signature);
+    // Send TX in parallel with wallet opening for maximum speed
+    const [tx] = await Promise.all([
+      vaultContract.mintWithPermit2(collateralAddress, btcAmount, permit, signature),
+      walletOpenPromise
+    ]);
 
     console.log("✅ Transaction sent:", tx.hash);
     
@@ -215,6 +234,10 @@ export async function redeemBTC1WithPermit(
   signer: ethers.Signer
 ): Promise<TransactionResult> {
   try {
+    // INSTANT: Wake wallet IMMEDIATELY at start (parallel with setup)
+    console.log("📱 Waking wallet early...");
+    openWalletApp('signature').catch(() => {}); // Non-blocking, starts wallet launch
+    
     // 1. Eager Setup
     const btc1Amount = ethers.parseUnits(amount, 8);
     const provider = signer.provider!;
@@ -259,9 +282,9 @@ export async function redeemBTC1WithPermit(
     const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
     console.log("⚡ Vault contract ready for instant redeem");
 
-    // 4. Request Signature (Fire-and-forget wallet opening)
+    // 4. Request Signature (wallet already waking up from early call)
     console.log("⚡ Requesting EIP-2612 signature...");
-    openWalletApp('signature').catch(() => {}); // Fire-and-forget for instant UX
+    // Note: Wallet already opening from initial wake-up call
     
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
@@ -274,11 +297,26 @@ export async function redeemBTC1WithPermit(
     console.log("🚀 Parsing signature and broadcasting redeem...");
     const sig = ethers.Signature.from(signature);
 
-    // Fire-and-forget: Open wallet in background (non-blocking)
-    openWalletApp('transaction').catch(() => {});
-   
-    // Send TX INSTANTLY - contract and signature components ready
-    const tx = await vaultContract.redeemWithPermit(btc1Amount, collateralAddress, deadline, sig.v, sig.r, sig.s);
+    // HOT SESSION: Ping WalletConnect to ensure session is active (instant display)
+    try {
+      const wcProvider = (signer.provider as any);
+      if (wcProvider?.request) {
+        await Promise.race([
+          wcProvider.request({ method: "eth_chainId" }),
+          new Promise(resolve => setTimeout(resolve, 100)) // 100ms max
+        ]);
+        console.log("✅ WC session hot");
+      }
+    } catch { /* Ignore ping errors */ }
+
+    // Open wallet IMMEDIATELY (before transaction call)
+    const walletOpenPromise = openWalletApp('transaction').catch(() => {});
+    
+    // Send TX in parallel with wallet opening for maximum speed
+    const [tx] = await Promise.all([
+      vaultContract.redeemWithPermit(btc1Amount, collateralAddress, deadline, sig.v, sig.r, sig.s),
+      walletOpenPromise
+    ]);
 
     console.log("✅ Redeem sent:", tx.hash);
 
@@ -304,6 +342,10 @@ export async function claimRewards(
   signer: ethers.Signer
 ): Promise<TransactionResult> {
   try {
+    // INSTANT: Wake wallet IMMEDIATELY at start
+    console.log("📱 Waking wallet early...");
+    openWalletApp('transaction').catch(() => {}); // Non-blocking, starts wallet launch
+    
     // PRECOMPUTE: Parse amount and create contract BEFORE transaction
     const amountWei = ethers.parseUnits(amount, 8);
     const distributorContract = new ethers.Contract(
@@ -314,9 +356,7 @@ export async function claimRewards(
 
     console.log("🎁 Claiming rewards...");
     console.log("⚡ Contract ready for instant claim");
-    
-    // Open wallet parallel to logic
-    openWalletApp('transaction').catch(() => {});
+    // Note: Wallet already opening from initial wake-up call
     
     const receipt = await safeTransactionCall(
       async () => {

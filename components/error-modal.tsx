@@ -9,7 +9,7 @@ interface ErrorModalProps {
   onClose: () => void;
 }
 
-export function ErrorModal({ visible, title = "Transaction Failed", message, onClose }: ErrorModalProps) {
+export function ErrorModal({ visible, title, message, onClose }: ErrorModalProps) {
   const handleClose = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
@@ -21,57 +21,44 @@ export function ErrorModal({ visible, title = "Transaction Failed", message, onC
       transparent
       animationType="fade"
       onRequestClose={handleClose}
+      statusBarTranslucent
     >
-      <View className="flex-1 bg-black/70 items-center justify-center px-6">
+      <View className="flex-1 bg-black/85 items-center justify-center px-6">
         <View 
-          className="bg-surface rounded-3xl p-6 w-full max-w-sm border-2 border-destructive shadow-2xl"
+          className="bg-white dark:bg-gray-800 rounded-3xl p-8 w-full max-w-sm"
           style={{
-            shadowColor: '#ef4444',
+            shadowColor: '#000',
             shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.5,
+            shadowOpacity: 0.3,
             shadowRadius: 16,
             elevation: 24,
           }}
         >
           {/* Icon */}
-          <View className="items-center mb-4">
-            <View 
-              className="w-20 h-20 rounded-full bg-destructive/30 items-center justify-center"
-              style={{
-                shadowColor: '#ef4444',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.4,
-                shadowRadius: 8,
-                elevation: 8,
-              }}
-            >
+          <View className="items-center mb-6">
+            <View className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/30 items-center justify-center">
               <Text className="text-5xl">⚠️</Text>
             </View>
           </View>
 
-          {/* Title */}
-          <Text className="text-2xl font-bold text-foreground text-center mb-3">
-            {title}
-          </Text>
-
-          {/* Message */}
-          <Text className="text-base text-muted text-center leading-7 mb-8">
+          {/* Message Only - Clean and Simple */}
+          <Text className="text-xl font-semibold text-gray-900 dark:text-white text-center leading-8 mb-8">
             {message}
           </Text>
 
           {/* Close Button */}
           <TouchableOpacity
             onPress={handleClose}
-            className="bg-destructive py-4 rounded-xl items-center shadow-lg"
+            className="bg-red-500 py-4 rounded-2xl items-center active:bg-red-600"
             style={{
               shadowColor: '#ef4444',
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: 0.3,
               shadowRadius: 8,
-              elevation: 6,
+              elevation: 8,
             }}
           >
-            <Text className="text-white text-lg font-bold">OK, Got It</Text>
+            <Text className="text-white text-lg font-semibold">Got it</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -176,7 +176,8 @@ export default function RewardsScreen() {
         console.error("Session error:", sessionError);
         if (sessionError.message?.includes("session") || sessionError.message?.includes("topic")) {
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          alert("Wallet session expired. Please reconnect your wallet.");
+          setErrorMessage("Wallet connection lost. Please reconnect your wallet and try again.");
+          setShowErrorModal(true);
           setClaimingDistributionId(null);
           return;
         }
