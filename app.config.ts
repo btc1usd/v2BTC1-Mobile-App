@@ -1,5 +1,8 @@
 // Load environment variables with proper priority (system > .env)
-import "./scripts/load-env.js";
+// Only load in local development, EAS handles env vars automatically
+if (!process.env.EAS_BUILD) {
+  require("./scripts/load-env.js");
+}
 import type { ExpoConfig } from "expo/config";
 
 // Use clean BTC1USD scheme instead of timestamp-based manus scheme

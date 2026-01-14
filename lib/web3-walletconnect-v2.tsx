@@ -3,7 +3,7 @@ import "react-native-get-random-values";
 
 // 1. GLOBAL LOG SUPPRESSION (Fastest possible execution)
 if (!__DEV__) {
-  // @ts-ignore
+  // @ts-ignore - Completely disable Pino logger at global level
   global.pino = { child: () => ({ error: () => {}, warn: () => {}, info: () => {}, debug: () => {} }) };
   
   const originalConsoleError = console.error;
@@ -11,24 +11,41 @@ if (!__DEV__) {
   
   console.error = (...args: any[]) => {
     const str = JSON.stringify(args);
-    // Suppress WalletConnect internal errors and session topic errors
+    // Suppress WalletConnect internal errors, relay messages, and session topic errors
     if (
       str.includes('"level":50') || 
+      str.includes('"level": 50') ||
       str.includes('session topic') ||
       str.includes('No matching key') ||
-      str.includes("doesn't exist")
+      str.includes("doesn't exist") ||
+      str.includes('onRelayMessage') ||
+      str.includes('failed to process an inbound message')
     ) return;
     originalConsoleError(...args);
   };
   
   console.warn = (...args: any[]) => {
     const str = JSON.stringify(args);
-    // Suppress session warnings after disconnect
+    // Suppress session warnings and relay warnings
     if (
       str.includes('session topic') ||
-      str.includes('No matching key')
+      str.includes('No matching key') ||
+      str.includes('onRelayMessage')
     ) return;
     originalConsoleWarn(...args);
+  };
+} else {
+  // Also suppress in development but keep some debugging
+  const originalConsoleError = console.error;
+  
+  console.error = (...args: any[]) => {
+    const str = JSON.stringify(args);
+    // Only suppress the noisy relay message errors in dev too
+    if (
+      str.includes('onRelayMessage') ||
+      str.includes('failed to process an inbound message')
+    ) return;
+    originalConsoleError(...args);
   };
 }
 
@@ -42,7 +59,7 @@ import React, {
   ReactNode,
 } from "react";
 import { ethers } from "ethers";
-import { Linking } from "react-native";
+import { Linking, AppState, AppStateStatus } from "react-native";
 import Constants from "expo-constants";
 import EthereumProvider from "@walletconnect/ethereum-provider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -180,6 +197,11 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const [isInitializing, setIsInitializing] = useState(true);
 
   const connectLockRef = useRef(false);
+  const sessionHealthCheckInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const appStateListener = useRef<any>(null);
+  const lastHealthCheckRef = useRef<number>(Date.now());
+  const connectionRetryCount = useRef<number>(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Helper to extract account info directly from WC Session (Zero RPC Calls)
   const extractSessionData = useCallback((provider: any) => {
@@ -217,20 +239,49 @@ export function Web3Provider({ children }: { children: ReactNode }) {
             const sessionData = extractSessionData(provider);
             
             if (sessionData) {
-                // 3. Hydrate State Immediately (Zero Network Delay)
-                setWcProvider(provider);
-                setAddress(sessionData.address);
-                setChainId(sessionData.chainId);
-                setIsConnected(true);
+                // 3. Validate session storage consistency
+                const storedConnected = await AsyncStorage.getItem("wc_connected");
+                const storedWallet = await AsyncStorage.getItem("wc_preferred_wallet");
                 
-                // 4. Lazy Load Signer (Non-blocking)
-                const ethersProvider = new ethers.BrowserProvider(provider);
-                ethersProvider.getSigner().then(s => {
-                    if(mounted) setSigner(s);
-                }).catch(err => console.log("Signer load warning:", err));
+                if (storedConnected === "true") {
+                    // 4. Hydrate State Immediately (Zero Network Delay)
+                    setWcProvider(provider);
+                    setAddress(sessionData.address);
+                    setChainId(sessionData.chainId);
+                    setIsConnected(true);
+                    
+                    console.log("✅ Session restored - Address:", sessionData.address.slice(0, 6) + "...");
+                    if (storedWallet) {
+                        console.log("🐛 Preferred wallet:", storedWallet);
+                    }
+                    
+                    // 5. Lazy Load Signer (Non-blocking)
+                    const ethersProvider = new ethers.BrowserProvider(provider);
+                    ethersProvider.getSigner().then(s => {
+                        if(mounted) setSigner(s);
+                    }).catch(err => console.log("Signer load warning:", err));
 
-                setupEventListeners(provider);
+                    setupEventListeners(provider);
+                    
+                    // 6. Verify session health after restore
+                    setTimeout(() => {
+                        if (mounted && provider.session) {
+                            checkSessionHealth();
+                        }
+                    }, 3000);
+                } else {
+                    // Storage mismatch - clean up stale session
+                    console.log("🧹 Storage mismatch detected, cleaning stale session...");
+                    try {
+                        await provider.disconnect();
+                    } catch {}
+                }
             }
+        } else {
+            // No session found - ensure storage is clean
+            console.log("🆕 No existing session found");
+            await AsyncStorage.removeItem("wc_connected");
+            await AsyncStorage.removeItem("wc_preferred_wallet");
         }
       } catch (e) {
         console.log("Init warning:", e);
@@ -241,7 +292,7 @@ export function Web3Provider({ children }: { children: ReactNode }) {
 
     init();
     return () => { mounted = false; };
-  }, []);
+  }, [extractSessionData]);
 
   /* ============================================================
      EVENT LISTENERS (SAFE)
@@ -353,7 +404,10 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         // Save connection state and preferred wallet for future operations
         await AsyncStorage.setItem("wc_connected", "true");
         await AsyncStorage.setItem("wc_preferred_wallet", walletId);
+        await AsyncStorage.setItem("wc_session_timestamp", Date.now().toString());
+        await AsyncStorage.setItem("wc_session_address", newAddr);
         console.log("✅ Saved preferred wallet:", walletId);
+        console.log("🔒 Session persisted with address:", newAddr.slice(0, 6) + "...");
         
         setupEventListeners(provider);
 
@@ -408,6 +462,8 @@ export function Web3Provider({ children }: { children: ReactNode }) {
         // Clean storage
         await AsyncStorage.removeItem("wc_connected");
         await AsyncStorage.removeItem("wc_preferred_wallet");
+        await AsyncStorage.removeItem("wc_session_timestamp");
+        await AsyncStorage.removeItem("wc_session_address");
         
         // Cleanup internal WC keys
         const keys = await AsyncStorage.getAllKeys();
@@ -451,10 +507,136 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const wakeWallet = useCallback(async () => {
     if (!wcProvider || !isConnected) return;
     try {
-        // Lightweight ping to keep socket alive, don't await strictly
-        wcProvider.request({ method: "eth_blockNumber" }).catch(() => {});
+        // Lightweight ping to keep socket alive with multiple fallback methods
+        const keepAlivePromises = [
+          wcProvider.request({ method: "eth_chainId" }),
+          wcProvider.request({ method: "net_version" }),
+        ];
+        
+        // Race between methods, use first successful response
+        await Promise.race(keepAlivePromises).catch(() => {
+          // If both fail, try one more time with eth_blockNumber
+          wcProvider.request({ method: "eth_blockNumber" }).catch(() => {});
+        });
+        
+        console.log("💚 Session keep-alive ping sent");
     } catch {}
   }, [wcProvider, isConnected]);
+
+  /* ============================================================
+     SESSION HEALTH MONITORING (DeFi Best Practice)
+  ============================================================ */
+  
+  // Health check: Verify session is still valid
+  const checkSessionHealth = useCallback(async () => {
+    if (!wcProvider || !isConnected) return true;
+    
+    try {
+      // Quick session validation via eth_chainId (lightweight)
+      const result = await Promise.race([
+        wcProvider.request({ method: "eth_chainId" }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+      ]);
+      
+      lastHealthCheckRef.current = Date.now();
+      connectionRetryCount.current = 0; // Reset retry count on success
+      return !!result;
+    } catch (error: any) {
+      console.log("⚠️ Session health check failed:", error.message);
+      
+      // If session is truly dead, disconnect gracefully
+      if (error.message?.includes('session') || error.message?.includes('No matching key')) {
+        console.log("🔌 Session expired, disconnecting...");
+        await disconnectWallet();
+        return false;
+      }
+      
+      // For network errors, implement retry with exponential backoff
+      if (error.message?.includes('timeout') || error.message?.includes('network')) {
+        connectionRetryCount.current++;
+        
+        if (connectionRetryCount.current <= 3) {
+          const retryDelay = Math.min(1000 * Math.pow(2, connectionRetryCount.current), 10000);
+          console.log(`🔄 Retrying session health check in ${retryDelay}ms (attempt ${connectionRetryCount.current}/3)`);
+          
+          retryTimeoutRef.current = setTimeout(() => {
+            checkSessionHealth();
+          }, retryDelay);
+        } else {
+          console.log("❌ Max retry attempts reached, keeping connection alive");
+          connectionRetryCount.current = 0; // Reset for next cycle
+        }
+      }
+      
+      return true; // Network errors are ok, don't force disconnect
+    }
+  }, [wcProvider, isConnected, disconnectWallet]);
+
+  // Auto-reconnect on app resume (modern DeFi pattern)
+  const handleAppStateChange = useCallback(async (nextAppState: AppStateStatus) => {
+    if (nextAppState === 'active' && wcProvider && isConnected) {
+      console.log("📱 App resumed - verifying session...");
+      
+      // Check if session is still healthy after app was backgrounded
+      const timeSinceLastCheck = Date.now() - lastHealthCheckRef.current;
+      
+      // If app was backgrounded for > 30s, do a health check
+      if (timeSinceLastCheck > 30000) {
+        await checkSessionHealth();
+      }
+    }
+  }, [wcProvider, isConnected, checkSessionHealth]);
+
+  // Setup app state listener
+  useEffect(() => {
+    appStateListener.current = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => {
+      if (appStateListener.current) {
+        appStateListener.current.remove();
+      }
+    };
+  }, [handleAppStateChange]);
+
+  // Periodic session health checks (every 2 minutes when connected)
+  useEffect(() => {
+    if (isConnected && wcProvider) {
+      console.log("🔄 Starting session health monitoring...");
+      
+      // Initial check after 5 seconds
+      const initialTimer = setTimeout(() => {
+        checkSessionHealth();
+      }, 5000);
+      
+      // Periodic checks every 2 minutes
+      sessionHealthCheckInterval.current = setInterval(() => {
+        checkSessionHealth();
+      }, 120000); // 2 minutes
+      
+      return () => {
+        clearTimeout(initialTimer);
+        if (sessionHealthCheckInterval.current) {
+          clearInterval(sessionHealthCheckInterval.current);
+          sessionHealthCheckInterval.current = null;
+        }
+      };
+    }
+  }, [isConnected, wcProvider, checkSessionHealth]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (sessionHealthCheckInterval.current) {
+        clearInterval(sessionHealthCheckInterval.current);
+      }
+      if (appStateListener.current) {
+        appStateListener.current.remove();
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const value: Web3ContextType = {
     readProvider,

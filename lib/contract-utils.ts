@@ -125,7 +125,7 @@ export async function mintBTC1WithPermit2(
       await openWalletApp('transaction');
       const approveTx = await withTimeout(
         () => tokenContract.approve(permit2Address, ethers.MaxUint256),
-        60000, 
+        45000, 
         "Permit2 approval"
       );
       await approveTx.wait();
@@ -175,7 +175,7 @@ export async function mintBTC1WithPermit2(
     
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
-      30000, // 30s - faster signature timeout
+      25000, // 25s - ultra-fast signature timeout
       "Permit2 signature",
       false
     );
@@ -194,7 +194,7 @@ export async function mintBTC1WithPermit2(
 
     console.log("✅ Transaction sent:", tx.hash);
     
-    const receipt = await withTimeout(() => tx.wait(), 60000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 60s - faster confirmation
+    const receipt = await withTimeout(() => tx.wait(), 45000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 45s - faster confirmation
 
     return { success: true, txHash: receipt.hash };
 
@@ -260,7 +260,7 @@ export async function redeemBTC1WithPermit(
     
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
-      30000, // 30s - faster signature timeout
+      25000, // 25s - ultra-fast signature timeout
       "EIP-2612 signature",
       false
     );
@@ -279,7 +279,7 @@ export async function redeemBTC1WithPermit(
 
     console.log("✅ Redeem sent:", tx.hash);
 
-    const receipt = await withTimeout(() => tx.wait(), 60000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 60s - faster confirmation
+    const receipt = await withTimeout(() => tx.wait(), 45000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 45s - faster confirmation
 
     return { success: true, txHash: receipt.hash };
 
