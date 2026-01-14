@@ -40,6 +40,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
+    associatedDomains: [`applinks:${env.appSlug}.app`],
   },
   android: {
     adaptiveIcon: {
@@ -60,6 +61,15 @@ const config: ExpoConfig = {
           {
             scheme: env.scheme,
             host: "*",
+          },
+        ],
+        category: ["BROWSABLE", "DEFAULT"],
+      },
+      {
+        action: "VIEW",
+        data: [
+          {
+            scheme: env.scheme,
           },
         ],
         category: ["BROWSABLE", "DEFAULT"],

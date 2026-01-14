@@ -69,6 +69,7 @@ export async function withTimeout<T>(
  * Optimized for famous DeFi mobile apps (Uniswap, Aave, Curve patterns)
  * - Instant wallet opening with no unnecessary delays
  * - Proper deep linking with app return detection
+ * - Automatic return to app after wallet action (DeFi standard)
  */
 export async function openWalletApp(action: 'connect' | 'transaction' | 'signature' = 'transaction'): Promise<void> {
   try {
@@ -80,46 +81,26 @@ export async function openWalletApp(action: 'connect' | 'transaction' | 'signatu
       return;
     }
 
-    // Wallet deep link schemes with WalletConnect fallback
-    const walletSchemes: Record<string, { deepLink: string; wcLink?: string }> = {
-      metamask: { 
-        deepLink: "metamask://wc",
-        wcLink: "https://metamask.app.link/wc"
-      },
-      rainbow: { deepLink: "rainbow://" },
-      trust: { deepLink: "trust://" },
-      coinbase: { deepLink: "cbwallet://" },
-      zerion: { deepLink: "zerion://" },
-      omni: { deepLink: "omni://" },
+    // Simple wallet schemes - for active WC sessions, just open the wallet app
+    // The wallet itself handles the return via WalletConnect session
+    const walletSchemes: Record<string, string> = {
+      metamask: "metamask://",
+      rainbow: "rainbow://",
+      trust: "trust://",
+      coinbase: "cbwallet://",
+      zerion: "zerion://",
+      omni: "omni://",
     };
 
-    const walletConfig = walletSchemes[preferredWallet];
-    if (walletConfig) {
+    const walletScheme = walletSchemes[preferredWallet];
+    if (walletScheme) {
       console.log(`📱 Opening ${preferredWallet} for ${action}...`);
       
-      // Try deep link first (instant)
       try {
-        await Linking.openURL(walletConfig.deepLink);
-        console.log(`✅ ${preferredWallet} opened via deep link`);
-      } catch (deepLinkError: any) {
-        console.warn(`⚠️ Deep link failed: ${deepLinkError.message}`);
-        
-        // Try WalletConnect universal link as fallback
-        if (walletConfig.wcLink) {
-          try {
-            console.log(`🔄 Trying WalletConnect universal link...`);
-            await Linking.openURL(walletConfig.wcLink);
-            console.log(`✅ ${preferredWallet} opened via universal link`);
-          } catch (wcError: any) {
-            console.warn(`⚠️ Universal link also failed: ${wcError.message}`);
-            // User will need to manually open wallet
-          }
-        }
-      }
-      
-      // Minimal delay - just 0ms for instant app switching (maximum speed)
-      if (WALLET_OPEN_DELAY > 0) {
-        await new Promise(resolve => setTimeout(resolve, WALLET_OPEN_DELAY));
+        await Linking.openURL(walletScheme);
+        console.log(`✅ ${preferredWallet} opened`);
+      } catch (error: any) {
+        console.warn(`⚠️ Failed to open ${preferredWallet}: ${error.message}`);
       }
     } else {
       console.log("⚠️ Unknown wallet, cannot open app");

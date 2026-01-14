@@ -169,6 +169,10 @@ export async function mintBTC1WithPermit2(
       deadline: deadline,
     };
 
+    // PRECOMPUTE: Create vault contract BEFORE signature (instant transaction after)
+    const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
+    console.log("⚡ Vault contract ready for instant transaction");
+
     // 6. Request Signature (Optimized Flow - Open wallet in background)
     console.log("⚡ Requesting signature...");
     openWalletApp('signature').catch(() => {}); // Fire-and-forget for instant UX
@@ -180,21 +184,18 @@ export async function mintBTC1WithPermit2(
       false
     );
 
-    // 7. HOT PATH: Transaction Execution
-    // Prepare Contract immediately
-    const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
-
+    // 7. HOT PATH: Transaction Execution (INSTANT - everything precomputed)
     console.log("🚀 Broadcasting transaction...");
 
     // Fire-and-forget: Open wallet in background (non-blocking)
     openWalletApp('transaction').catch(() => {});
     
-    // Send TX INSTANTLY - no delays, no waiting
+    // Send TX INSTANTLY - contract and all data already prepared
     const tx = await vaultContract.mintWithPermit2(collateralAddress, btcAmount, permit, signature);
 
     console.log("✅ Transaction sent:", tx.hash);
     
-    const receipt = await withTimeout(() => tx.wait(), 45000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 45s - faster confirmation
+    const receipt = await withTimeout(() => tx.wait(), 45000, "Transaction confirmation") as ethers.ContractTransactionReceipt;
 
     return { success: true, txHash: receipt.hash };
 
@@ -254,6 +255,10 @@ export async function redeemBTC1WithPermit(
       deadline: deadline,
     };
 
+    // PRECOMPUTE: Create vault contract BEFORE signature (instant transaction after)
+    const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
+    console.log("⚡ Vault contract ready for instant redeem");
+
     // 4. Request Signature (Fire-and-forget wallet opening)
     console.log("⚡ Requesting EIP-2612 signature...");
     openWalletApp('signature').catch(() => {}); // Fire-and-forget for instant UX
@@ -265,16 +270,14 @@ export async function redeemBTC1WithPermit(
       false
     );
 
-    // 5. HOT PATH: Transaction
+    // 5. HOT PATH: Transaction (INSTANT - parse signature and send)
+    console.log("🚀 Parsing signature and broadcasting redeem...");
     const sig = ethers.Signature.from(signature);
-    const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
-
-    console.log("🚀 Broadcasting redeem...");
 
     // Fire-and-forget: Open wallet in background (non-blocking)
     openWalletApp('transaction').catch(() => {});
    
-    // Send TX INSTANTLY - no delays, no waiting
+    // Send TX INSTANTLY - contract and signature components ready
     const tx = await vaultContract.redeemWithPermit(btc1Amount, collateralAddress, deadline, sig.v, sig.r, sig.s);
 
     console.log("✅ Redeem sent:", tx.hash);
@@ -301,6 +304,7 @@ export async function claimRewards(
   signer: ethers.Signer
 ): Promise<TransactionResult> {
   try {
+    // PRECOMPUTE: Parse amount and create contract BEFORE transaction
     const amountWei = ethers.parseUnits(amount, 8);
     const distributorContract = new ethers.Contract(
       CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR,
@@ -309,9 +313,10 @@ export async function claimRewards(
     );
 
     console.log("🎁 Claiming rewards...");
+    console.log("⚡ Contract ready for instant claim");
     
     // Open wallet parallel to logic
-    openWalletApp('transaction');
+    openWalletApp('transaction').catch(() => {});
     
     const receipt = await safeTransactionCall(
       async () => {

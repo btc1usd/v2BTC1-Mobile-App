@@ -357,23 +357,38 @@ export function Web3Provider({ children }: { children: ReactNode }) {
             try { await provider.disconnect(); } catch {}
         }
 
-        // 2. Setup URI Handler
+        // 2. Setup URI Handler with redirect for auto-return (DeFi pattern)
         const wallet = SUPPORTED_WALLETS[walletId];
+        const appScheme = "btc1usd://";
+        
         const onDisplayUri = async (uri: string) => {
              // Race condition check
              if (!connectLockRef.current) return;
              
+             // Format deep links with redirect based on wallet type
+             let deepLinkUrl: string;
+             let universalLinkUrl: string;
+             
+             if (walletId === 'metamask') {
+               // MetaMask uses returnUrl parameter
+               deepLinkUrl = `metamask://wc?uri=${encodeURIComponent(uri)}&returnUrl=${encodeURIComponent(appScheme)}`;
+               universalLinkUrl = `https://metamask.app.link/wc?uri=${encodeURIComponent(uri)}&returnUrl=${encodeURIComponent(appScheme)}`;
+             } else {
+               // Other wallets use redirect parameter
+               deepLinkUrl = wallet.deepLink(uri) + `&redirect=${encodeURIComponent(appScheme)}`;
+               universalLinkUrl = wallet.universalLink(uri) + `&redirect=${encodeURIComponent(appScheme)}`;
+             }
+             
              try {
-                // Try Deep Link first (Fastest)
-                const deep = wallet.deepLink(uri);
-                const canOpen = await Linking.canOpenURL(deep);
+                // Try Deep Link first (Fastest) with redirect
+                const canOpen = await Linking.canOpenURL(deepLinkUrl);
                 if (canOpen) {
-                    await Linking.openURL(deep);
+                    await Linking.openURL(deepLinkUrl);
                 } else {
-                    await Linking.openURL(wallet.universalLink(uri));
+                    await Linking.openURL(universalLinkUrl);
                 }
              } catch {
-                 await Linking.openURL(wallet.universalLink(uri));
+                 await Linking.openURL(universalLinkUrl);
              }
         };
 

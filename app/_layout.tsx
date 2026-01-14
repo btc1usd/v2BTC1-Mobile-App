@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { Platform } from "react-native";
+import { Platform, Linking, AppState } from "react-native";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { Web3Provider } from "@/lib/web3-walletconnect-v2";
@@ -38,6 +38,45 @@ export default function RootLayout() {
   // Initialize BTC1USD app runtime for cookie injection from parent container
   useEffect(() => {
     initAppRuntime();
+  }, []);
+
+  // Deep link handler for wallet return (DeFi standard pattern)
+  useEffect(() => {
+    // Handle initial URL if app was opened via deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log('🔗 App opened with URL:', url);
+        if (url.includes('btc1usd://')) {
+          console.log('✅ Deep link detected - app returning from wallet');
+        }
+      }
+    });
+
+    // Listen for deep links while app is running
+    const subscription = Linking.addEventListener('url', (event) => {
+      console.log('🔗 Deep link received:', event.url);
+      if (event.url?.includes('btc1usd://')) {
+        console.log('✅ Returned to app from wallet');
+        // App automatically focuses - no additional action needed
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
+
+  // Monitor app state changes for wallet return detection
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        console.log('📱 App became active - user may have returned from wallet');
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
   }, []);
 
   const handleSafeAreaUpdate = useCallback((metrics: Metrics) => {
