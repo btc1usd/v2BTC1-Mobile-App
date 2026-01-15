@@ -177,7 +177,25 @@ export async function mintBTC1WithPermit2(
     const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
     console.log("⚡ Vault contract ready for instant transaction");
 
-    // 6. Request Signature (Optimized Flow - wallet already waking up)
+    // 6. CRITICAL: Wake WalletConnect session BEFORE signature request
+    // This ensures the wallet is ready to display the signing prompt immediately
+    console.log("🔄 Waking WalletConnect session...");
+    try {
+      const wcProvider = (signer.provider as any);
+      if (wcProvider?.request) {
+        // Give session 2 seconds to wake up (prevents "2 visits" issue)
+        await Promise.race([
+          wcProvider.request({ method: "eth_chainId" }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Session wake timeout')), 2000))
+        ]);
+        console.log("✅ WC session ready");
+      }
+    } catch (e: any) {
+      console.warn("⚠️ Session wake warning:", e.message);
+      // Continue anyway - wallet might still respond
+    }
+
+    // 7. Request Signature (Session is now hot)
     console.log("⚡ Requesting signature...");
     // Note: Wallet already opening from initial wake-up call
     
@@ -188,20 +206,8 @@ export async function mintBTC1WithPermit2(
       false
     );
 
-    // 7. HOT PATH: Transaction Execution (INSTANT - everything precomputed)
-    console.log("🚀 Broadcasting transaction...");
-
-    // HOT SESSION: Ping WalletConnect to ensure session is active (instant display)
-    try {
-      const wcProvider = (signer.provider as any);
-      if (wcProvider?.request) {
-        await Promise.race([
-          wcProvider.request({ method: "eth_chainId" }),
-          new Promise(resolve => setTimeout(resolve, 100)) // 100ms max
-        ]);
-        console.log("✅ WC session hot");
-      }
-    } catch { /* Ignore ping errors */ }
+    // 8. HOT PATH: Transaction Execution (INSTANT - everything precomputed)
+    console.log("🚀 Broadcasting transaction...")
 
     // Open wallet IMMEDIATELY (before transaction call)
     const walletOpenPromise = openWalletApp('transaction').catch(() => {});
@@ -282,7 +288,25 @@ export async function redeemBTC1WithPermit(
     const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
     console.log("⚡ Vault contract ready for instant redeem");
 
-    // 4. Request Signature (wallet already waking up from early call)
+    // 4. CRITICAL: Wake WalletConnect session BEFORE signature request
+    // This ensures the wallet is ready to display the signing prompt immediately
+    console.log("🔄 Waking WalletConnect session...");
+    try {
+      const wcProvider = (signer.provider as any);
+      if (wcProvider?.request) {
+        // Give session 2 seconds to wake up (prevents "2 visits" issue)
+        await Promise.race([
+          wcProvider.request({ method: "eth_chainId" }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Session wake timeout')), 2000))
+        ]);
+        console.log("✅ WC session ready");
+      }
+    } catch (e: any) {
+      console.warn("⚠️ Session wake warning:", e.message);
+      // Continue anyway - wallet might still respond
+    }
+
+    // 5. Request Signature (Session is now hot)
     console.log("⚡ Requesting EIP-2612 signature...");
     // Note: Wallet already opening from initial wake-up call
     
@@ -293,21 +317,9 @@ export async function redeemBTC1WithPermit(
       false
     );
 
-    // 5. HOT PATH: Transaction (INSTANT - parse signature and send)
+    // 6. HOT PATH: Transaction (INSTANT - parse signature and send)
     console.log("🚀 Parsing signature and broadcasting redeem...");
-    const sig = ethers.Signature.from(signature);
-
-    // HOT SESSION: Ping WalletConnect to ensure session is active (instant display)
-    try {
-      const wcProvider = (signer.provider as any);
-      if (wcProvider?.request) {
-        await Promise.race([
-          wcProvider.request({ method: "eth_chainId" }),
-          new Promise(resolve => setTimeout(resolve, 100)) // 100ms max
-        ]);
-        console.log("✅ WC session hot");
-      }
-    } catch { /* Ignore ping errors */ }
+    const sig = ethers.Signature.from(signature)
 
     // Open wallet IMMEDIATELY (before transaction call)
     const walletOpenPromise = openWalletApp('transaction').catch(() => {});

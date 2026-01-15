@@ -105,6 +105,81 @@ const getWcProvider = () => {
   return wcProviderPromise;
 };
 
+// HARD RESET helper – used by DebugPanel and disconnect flow
+export async function clearAllWalletConnectData(): Promise<void> {
+  console.log("🧹 Clearing all WalletConnect data (hard reset)");
+
+  try {
+    // If a provider has already been created, clean it up
+    if (wcProviderPromise) {
+      let provider: any = null;
+      try {
+        provider = await wcProviderPromise;
+      } catch {
+        provider = null;
+      }
+
+      if (provider) {
+        // Remove listeners as defensively as possible
+        try {
+          if (typeof provider.removeAllListeners === "function") {
+            provider.removeAllListeners();
+          } else if (typeof provider.off === "function") {
+            try {
+              provider.off("accountsChanged");
+              provider.off("chainChanged");
+              provider.off("disconnect");
+              provider.off("session_delete");
+              provider.off("display_uri");
+            } catch {}
+          }
+        } catch {}
+
+        // Best‑effort disconnect with timeout
+        try {
+          await Promise.race([
+            provider.disconnect(),
+            new Promise((resolve) => setTimeout(resolve, 2000)),
+          ]);
+        } catch (e: any) {
+          const msg = e?.message || "";
+          if (
+            !msg.includes("session topic") &&
+            !msg.includes("No matching key")
+          ) {
+            console.warn("clearAllWalletConnectData disconnect warning:", msg);
+          }
+        }
+      }
+    }
+
+    // Clear our own tracking keys
+    await AsyncStorage.removeItem("wc_connected");
+    await AsyncStorage.removeItem("wc_preferred_wallet");
+    await AsyncStorage.removeItem("wc_session_timestamp");
+    await AsyncStorage.removeItem("wc_session_address");
+
+    // Clear WalletConnect internal keys
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const wcKeys = keys.filter((k) => k.startsWith("wc@2"));
+      if (wcKeys.length > 0) {
+        await AsyncStorage.multiRemove(wcKeys);
+      }
+    } catch (e: any) {
+      console.warn(
+        "clearAllWalletConnectData storage cleanup warning:",
+        e?.message
+      );
+    }
+  } finally {
+    // Force a fresh EthereumProvider.init() on next connect
+    wcProviderPromise = null;
+  }
+
+  console.log("✅ WalletConnect data cleared");
+}
+
 // Start initialization immediately
 getWcProvider();
 
@@ -452,48 +527,17 @@ export function Web3Provider({ children }: { children: ReactNode }) {
     connectLockRef.current = false;
     
     try {
-        const provider = await getWcProvider();
-        
-        if (provider) {
-            // Remove all event listeners first
-            if (typeof provider.removeAllListeners === 'function') {
-                try { provider.removeAllListeners(); } catch (e) { /* ignore */ }
-            }
-            
-            // Disconnect session with timeout (suppress errors)
-            try { 
-                await Promise.race([
-                    provider.disconnect(),
-                    new Promise((resolve) => setTimeout(resolve, 2000)) // 2s timeout
-                ]);
-            } catch (e: any) { 
-                // Expected errors after disconnect - suppress them
-                if (!e.message?.includes('session topic') && !e.message?.includes('No matching key')) {
-                    console.warn("Disconnect warning:", e.message);
-                }
-            }
-        }
-        
-        // Clean storage
-        await AsyncStorage.removeItem("wc_connected");
-        await AsyncStorage.removeItem("wc_preferred_wallet");
-        await AsyncStorage.removeItem("wc_session_timestamp");
-        await AsyncStorage.removeItem("wc_session_address");
-        
-        // Cleanup internal WC keys
-        const keys = await AsyncStorage.getAllKeys();
-        const wcKeys = keys.filter(k => k.startsWith('wc@2'));
-        if (wcKeys.length > 0) {
-            await AsyncStorage.multiRemove(wcKeys);
-        }
-        
-        console.log("✅ Wallet disconnected");
-        
+      // Hard reset all WalletConnect state (provider + storage)
+      await clearAllWalletConnectData();
+      console.log("✅ Wallet disconnected");
     } catch (e: any) {
-        // Suppress all session-related errors
-        if (!e.message?.includes('session topic') && !e.message?.includes('No matching key')) {
-            console.warn("Disconnect cleanup:", e.message);
-        }
+      const msg = e?.message || "";
+      if (
+        !msg.includes("session topic") &&
+        !msg.includes("No matching key")
+      ) {
+        console.warn("Disconnect cleanup:", msg);
+      }
     }
   }, []);
 

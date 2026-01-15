@@ -26,7 +26,7 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  version: "1.0.0",
+  version: "1.0.1",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -34,7 +34,7 @@ const config: ExpoConfig = {
   newArchEnabled: true,
   extra: {
     eas: {
-      projectId: "76671c95-a749-4cdc-91c3-4d3b17e7b32e",
+      projectId: "f51266d9-957e-41b9-98ec-7b153f421315",
     },
   },
   ios: {
@@ -52,6 +52,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
+    versionCode: 2,
     permissions: ["POST_NOTIFICATIONS"],
     intentFilters: [
       {
@@ -83,19 +84,6 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
-    [
-      "expo-audio",
-      {
-        microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",
-      },
-    ],
-    [
-      "expo-video",
-      {
-        supportsBackgroundPlayback: true,
-        supportsPictureInPicture: true,
-      },
-    ],
     [
       "expo-splash-screen",
       {
