@@ -22,8 +22,8 @@ let appStateListener: any = null;
 export const KEEP_ALIVE_INTERVAL = 30000; // 30 seconds
 export const SESSION_TIMEOUT = 120000; // 2 minutes
 export const MAX_RETRY_ATTEMPTS = 1;
-export const TRANSACTION_TIMEOUT = 45000; // 45 seconds - faster confirmation
-export const SIGNATURE_TIMEOUT = 25000; // 25 seconds - ultra-fast UX
+export const TRANSACTION_TIMEOUT = 90000; // 90 seconds - increased for wallet app launch
+export const SIGNATURE_TIMEOUT = 60000; // 60 seconds - increased for wallet app launch
 export const WALLET_OPEN_DELAY = 0; // 0ms - instant for maximum speed
 
 /**

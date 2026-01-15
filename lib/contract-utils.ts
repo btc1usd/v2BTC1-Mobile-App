@@ -92,10 +92,6 @@ export async function mintBTC1WithPermit2(
   permit2Address: string = "0x000000000022D473030F116dDEE9F6B43aC78BA3"
 ): Promise<TransactionResult> {
   try {
-    // INSTANT: Wake wallet IMMEDIATELY at start (parallel with setup)
-    console.log("📱 Waking wallet early...");
-    openWalletApp('signature').catch(() => {}); // Non-blocking, starts wallet launch
-    
     // 1. Eagerly parse amount and setup contracts (Synchronous)
     const btcAmount = ethers.parseUnits(amount, 8);
     const provider = signer.provider!;
@@ -129,7 +125,7 @@ export async function mintBTC1WithPermit2(
       await openWalletApp('transaction');
       const approveTx = await withTimeout(
         () => tokenContract.approve(permit2Address, ethers.MaxUint256),
-        45000, 
+        90000, // 90s - allows time for wallet app launch
         "Permit2 approval"
       );
       await approveTx.wait();
@@ -177,8 +173,8 @@ export async function mintBTC1WithPermit2(
     const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
     console.log("⚡ Vault contract ready for instant transaction");
 
-    // 6. CRITICAL: Wake WalletConnect session BEFORE signature request
-    // This ensures the wallet is ready to display the signing prompt immediately
+    // 6. CRITICAL: Wake WalletConnect session BEFORE opening wallet
+    // This ensures the session is ready when wallet app opens
     console.log("🔄 Waking WalletConnect session...");
     try {
       const wcProvider = (signer.provider as any);
@@ -195,13 +191,16 @@ export async function mintBTC1WithPermit2(
       // Continue anyway - wallet might still respond
     }
 
-    // 7. Request Signature (Session is now hot)
+    // 7. NOW open wallet app - session is already hot
+    console.log("📱 Opening wallet for signature...");
+    await openWalletApp('signature').catch(() => {});
+
+    // 8. Request Signature (Session is hot, wallet is opening)
     console.log("⚡ Requesting signature...");
-    // Note: Wallet already opening from initial wake-up call
     
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
-      25000, // 25s - ultra-fast signature timeout
+      60000, // 60s - allows time for wallet app launch
       "Permit2 signature",
       false
     );
@@ -209,18 +208,31 @@ export async function mintBTC1WithPermit2(
     // 8. HOT PATH: Transaction Execution (INSTANT - everything precomputed)
     console.log("🚀 Broadcasting transaction...")
 
-    // Open wallet IMMEDIATELY (before transaction call)
-    const walletOpenPromise = openWalletApp('transaction').catch(() => {});
+    // Wake session again for transaction (signature may have taken time)
+    console.log("🔄 Re-waking session for transaction...");
+    try {
+      const wcProvider = (signer.provider as any);
+      if (wcProvider?.request) {
+        await Promise.race([
+          wcProvider.request({ method: "eth_chainId" }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Session wake timeout')), 2000))
+        ]);
+        console.log("✅ Session ready for transaction");
+      }
+    } catch (e: any) {
+      console.warn("⚠️ Transaction session wake warning:", e.message);
+    }
+
+    // Open wallet AFTER session is hot
+    console.log("📱 Opening wallet for transaction...");
+    await openWalletApp('transaction').catch(() => {});
     
-    // Send TX in parallel with wallet opening for maximum speed
-    const [tx] = await Promise.all([
-      vaultContract.mintWithPermit2(collateralAddress, btcAmount, permit, signature),
-      walletOpenPromise
-    ]);
+    // Send transaction
+    const tx = await vaultContract.mintWithPermit2(collateralAddress, btcAmount, permit, signature);
 
     console.log("✅ Transaction sent:", tx.hash);
     
-    const receipt = await withTimeout(() => tx.wait(), 45000, "Transaction confirmation") as ethers.ContractTransactionReceipt;
+    const receipt = await withTimeout(() => tx.wait(), 90000, "Transaction confirmation") as ethers.ContractTransactionReceipt;
 
     return { success: true, txHash: receipt.hash };
 
@@ -240,10 +252,6 @@ export async function redeemBTC1WithPermit(
   signer: ethers.Signer
 ): Promise<TransactionResult> {
   try {
-    // INSTANT: Wake wallet IMMEDIATELY at start (parallel with setup)
-    console.log("📱 Waking wallet early...");
-    openWalletApp('signature').catch(() => {}); // Non-blocking, starts wallet launch
-    
     // 1. Eager Setup
     const btc1Amount = ethers.parseUnits(amount, 8);
     const provider = signer.provider!;
@@ -288,8 +296,8 @@ export async function redeemBTC1WithPermit(
     const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
     console.log("⚡ Vault contract ready for instant redeem");
 
-    // 4. CRITICAL: Wake WalletConnect session BEFORE signature request
-    // This ensures the wallet is ready to display the signing prompt immediately
+    // 4. CRITICAL: Wake WalletConnect session BEFORE opening wallet
+    // This ensures the session is ready when wallet app opens
     console.log("🔄 Waking WalletConnect session...");
     try {
       const wcProvider = (signer.provider as any);
@@ -306,33 +314,49 @@ export async function redeemBTC1WithPermit(
       // Continue anyway - wallet might still respond
     }
 
-    // 5. Request Signature (Session is now hot)
+    // 5. NOW open wallet app - session is already hot
+    console.log("📱 Opening wallet for signature...");
+    await openWalletApp('signature').catch(() => {});
+
+    // 6. Request Signature (Session is hot, wallet is opening)
     console.log("⚡ Requesting EIP-2612 signature...");
-    // Note: Wallet already opening from initial wake-up call
     
     const signature = await withTimeout(
       () => signer.signTypedData(domain, types, value),
-      25000, // 25s - ultra-fast signature timeout
+      60000, // 60s - allows time for wallet app launch
       "EIP-2612 signature",
       false
     );
 
-    // 6. HOT PATH: Transaction (INSTANT - parse signature and send)
+    // 7. HOT PATH: Transaction (INSTANT - parse signature and send)
     console.log("🚀 Parsing signature and broadcasting redeem...");
     const sig = ethers.Signature.from(signature)
 
-    // Open wallet IMMEDIATELY (before transaction call)
-    const walletOpenPromise = openWalletApp('transaction').catch(() => {});
+    // Wake session again for transaction (signature may have taken time)
+    console.log("🔄 Re-waking session for transaction...");
+    try {
+      const wcProvider = (signer.provider as any);
+      if (wcProvider?.request) {
+        await Promise.race([
+          wcProvider.request({ method: "eth_chainId" }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Session wake timeout')), 2000))
+        ]);
+        console.log("✅ Session ready for transaction");
+      }
+    } catch (e: any) {
+      console.warn("⚠️ Transaction session wake warning:", e.message);
+    }
+
+    // Open wallet AFTER session is hot
+    console.log("📱 Opening wallet for transaction...");
+    await openWalletApp('transaction').catch(() => {});
     
-    // Send TX in parallel with wallet opening for maximum speed
-    const [tx] = await Promise.all([
-      vaultContract.redeemWithPermit(btc1Amount, collateralAddress, deadline, sig.v, sig.r, sig.s),
-      walletOpenPromise
-    ]);
+    // Send transaction
+    const tx = await vaultContract.redeemWithPermit(btc1Amount, collateralAddress, deadline, sig.v, sig.r, sig.s);
 
     console.log("✅ Redeem sent:", tx.hash);
 
-    const receipt = await withTimeout(() => tx.wait(), 45000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 45s - faster confirmation
+    const receipt = await withTimeout(() => tx.wait(), 90000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 90s - allows time for wallet confirmation
 
     return { success: true, txHash: receipt.hash };
 
