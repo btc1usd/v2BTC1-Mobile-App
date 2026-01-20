@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
-import { safeContractCall } from "@/lib/wallet-keep-alive";
 
 export function useVaultStats() {
   const { readProvider, chainId } = useWeb3();
@@ -64,11 +63,7 @@ export function useVaultStats() {
       let btcPriceRaw = BigInt(0);
       try {
         // Use the getBTCPrice() function from the upgradeable oracle contract
-        const priceResult = await safeContractCall(
-          async () => chainlinkOracleContract.getBTCPrice(),
-          providerToUse,
-          "Chainlink BTC price"
-        );
+        const priceResult = await chainlinkOracleContract.getBTCPrice();
         
         console.log('Chainlink Oracle price result:', priceResult.toString());
         
@@ -89,16 +84,8 @@ export function useVaultStats() {
         );
         
         try {
-          const feedData = await safeContractCall(
-            async () => chainlinkFeedContract.latestRoundData(),
-            providerToUse,
-            "Chainlink feed data"
-          );
-          const decimals = await safeContractCall(
-            async () => chainlinkFeedContract.decimals(),
-            providerToUse,
-            "Chainlink decimals"
-          );
+          const feedData = await chainlinkFeedContract.latestRoundData();
+          const decimals = await chainlinkFeedContract.decimals();
           
           const { answer, updatedAt } = feedData;
           
@@ -136,21 +123,15 @@ export function useVaultStats() {
         }
       }
 
-      const [totalSupply, totalCollateralAmountRaw, collateralRatioRaw, healthy] = await safeContractCall(
-        async () => {
-          return Promise.all([
-            btc1Contract.totalSupply().catch(() => BigInt(0)),
-            contract.getTotalCollateralAmount().catch(() => BigInt(0)),
-            contract.getCurrentCollateralRatio().catch(() => {
-              console.warn('Contract getCurrentCollateralRatio() failed, using manual calculation');
-              return BigInt(0);
-            }), // Get CR directly from contract
-            contract.isHealthy().catch(() => false),
-          ]);
-        },
-        providerToUse,
-        "Vault stats"
-      );
+      const [totalSupply, totalCollateralAmountRaw, collateralRatioRaw, healthy] = await Promise.all([
+        btc1Contract.totalSupply().catch(() => BigInt(0)),
+        contract.getTotalCollateralAmount().catch(() => BigInt(0)),
+        contract.getCurrentCollateralRatio().catch(() => {
+          console.warn('Contract getCurrentCollateralRatio() failed, using manual calculation');
+          return BigInt(0);
+        }), // Get CR directly from contract
+        contract.isHealthy().catch(() => false),
+      ]);
 
       const totalSupplyValue = BigInt(totalSupply.toString());
       const totalCollateralAmount = BigInt(totalCollateralAmountRaw.toString());

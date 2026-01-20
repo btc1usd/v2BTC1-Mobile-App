@@ -1,6 +1,5 @@
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES, ABIS } from "./shared/contracts";
-import { safeContractCall, safeTransactionCall, openWalletApp, withTimeout } from "./wallet-keep-alive";
 
 export interface TransactionResult {
   success: boolean;
@@ -15,7 +14,7 @@ export interface ApprovalStatus {
 
 /**
  * Check if collateral token is approved for spending by the Vault
- * Uses safe contract call with automatic session retry
+ * READ: Uses direct RPC provider
  */
 export async function checkCollateralApproval(
   collateralAddress: string,
@@ -25,13 +24,7 @@ export async function checkCollateralApproval(
 ): Promise<ApprovalStatus> {
   try {
     const tokenContract = new ethers.Contract(collateralAddress, ABIS.ERC20, provider);
-    
-    // Execute logic immediately
-    const allowance = await safeContractCall(
-      () => tokenContract.allowance(userAddress, CONTRACT_ADDRESSES.VAULT),
-      provider,
-      "Check collateral allowance"
-    );
+    const allowance = await tokenContract.allowance(userAddress, CONTRACT_ADDRESSES.VAULT);
 
     const requiredAmount = ethers.parseUnits(amount, 8);
     return {
@@ -46,6 +39,7 @@ export async function checkCollateralApproval(
 
 /**
  * Approve collateral token spending by the Vault
+ * WRITE: Uses Thirdweb signer
  */
 export async function approveCollateral(
   collateralAddress: string,
@@ -57,33 +51,20 @@ export async function approveCollateral(
     const tokenContract = new ethers.Contract(collateralAddress, ABIS.ERC20, signer);
 
     console.log("Approving collateral...");
-
-    const receipt = await safeTransactionCall(
-      async () => {
-        // Prepare tx promise but don't await yet
-        const txPromise = tokenContract.approve(CONTRACT_ADDRESSES.VAULT, btcAmount);
-        const tx = await txPromise;
-        console.log("Approval tx:", tx.hash);
-        return await tx.wait();
-      },
-      signer.provider!,
-      signer,
-      "Collateral approval"
-    );
-
+    const tx = await tokenContract.approve(CONTRACT_ADDRESSES.VAULT, btcAmount);
+    console.log("Approval tx sent:", tx.hash);
+    
+    const receipt = await tx.wait();
     return { success: true, txHash: receipt.hash };
   } catch (error: any) {
     console.error("Error approving collateral:", error);
-    return {
-      success: false,
-      error: error.reason || error.message || "Failed to approve collateral",
-    };
+    return handleTransactionError(error);
   }
 }
 
 /**
  * Mint BTC1 tokens using Permit2 SignatureTransfer
- * OPTIMIZED: Uses parallel data fetching and eager execution.
+ * OPTIMIZED: READ/WRITE separation, Thirdweb v5 signing.
  */
 export async function mintBTC1WithPermit2(
   collateralAddress: string,
@@ -92,7 +73,6 @@ export async function mintBTC1WithPermit2(
   permit2Address: string = "0x000000000022D473030F116dDEE9F6B43aC78BA3"
 ): Promise<TransactionResult> {
   try {
-    // 1. Eagerly parse amount and setup contracts (Synchronous)
     const btcAmount = ethers.parseUnits(amount, 8);
     const provider = signer.provider!;
     const wordPos = BigInt(Math.floor(Date.now() / 1000));
@@ -109,29 +89,22 @@ export async function mintBTC1WithPermit2(
       provider
     );
 
-    // 2. PARALLEL FETCH: Get Address, ChainId, Allowance, and NonceBitmap simultaneously
-    // This removes the "waterfall" effect of awaiting them one by one.
     console.log("⚡ Fetching network data...");
     const [userAddress, network, currentAllowance, bitmap] = await Promise.all([
       signer.getAddress(),
       provider.getNetwork(),
-      tokenContract.allowance(await signer.getAddress(), permit2Address), // Double call to getAddress is cached by ethers usually, or we can chain it.
+      tokenContract.allowance(await signer.getAddress(), permit2Address),
       permit2Contract.nonceBitmap(await signer.getAddress(), wordPos)
     ]);
 
-    // 3. Handle Approval (if needed)
+    // Handle Approval (if needed)
     if (currentAllowance < btcAmount) {
       console.log("📝 Requesting Permit2 approval...");
-      await openWalletApp('transaction');
-      const approveTx = await withTimeout(
-        () => tokenContract.approve(permit2Address, ethers.MaxUint256),
-        90000, // 90s - allows time for wallet app launch
-        "Permit2 approval"
-      );
+      const approveTx = await tokenContract.approve(permit2Address, ethers.MaxUint256);
       await approveTx.wait();
     }
 
-    // 4. Calculate Nonce (Synchronous - fast)
+    // Calculate Nonce
     let bitPos = 0;
     const bitmapBigInt = BigInt(bitmap.toString());
     while (bitPos < 256 && (bitmapBigInt & (BigInt(1) << BigInt(bitPos))) !== BigInt(0)) {
@@ -139,7 +112,7 @@ export async function mintBTC1WithPermit2(
     }
     const nonce = (wordPos << BigInt(8)) | BigInt(bitPos);
 
-    // 5. Prepare Signing Data
+    // Prepare Signing Data
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
     const domain = { name: "Permit2", chainId: network.chainId, verifyingContract: permit2Address };
     
@@ -169,70 +142,15 @@ export async function mintBTC1WithPermit2(
       deadline: deadline,
     };
 
-    // PRECOMPUTE: Create vault contract BEFORE signature (instant transaction after)
+    console.log("⚡ Requesting Permit2 signature...");
+    const signature = await signer.signTypedData(domain, types, value);
+
+    console.log("🚀 Broadcasting transaction...");
     const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
-    console.log("⚡ Vault contract ready for instant transaction");
-
-    // 6. CRITICAL: Wake WalletConnect session BEFORE opening wallet
-    // This ensures the session is ready when wallet app opens
-    console.log("🔄 Waking WalletConnect session...");
-    try {
-      const wcProvider = (signer.provider as any);
-      if (wcProvider?.request) {
-        // Give session 2 seconds to wake up (prevents "2 visits" issue)
-        await Promise.race([
-          wcProvider.request({ method: "eth_chainId" }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Session wake timeout')), 2000))
-        ]);
-        console.log("✅ WC session ready");
-      }
-    } catch (e: any) {
-      console.warn("⚠️ Session wake warning:", e.message);
-      // Continue anyway - wallet might still respond
-    }
-
-    // 7. NOW open wallet app - session is already hot
-    console.log("📱 Opening wallet for signature...");
-    await openWalletApp('signature').catch(() => {});
-
-    // 8. Request Signature (Session is hot, wallet is opening)
-    console.log("⚡ Requesting signature...");
-    
-    const signature = await withTimeout(
-      () => signer.signTypedData(domain, types, value),
-      60000, // 60s - allows time for wallet app launch
-      "Permit2 signature",
-      false
-    );
-
-    // 8. HOT PATH: Transaction Execution (INSTANT - everything precomputed)
-    console.log("🚀 Broadcasting transaction...")
-
-    // Wake session again for transaction (signature may have taken time)
-    console.log("🔄 Re-waking session for transaction...");
-    try {
-      const wcProvider = (signer.provider as any);
-      if (wcProvider?.request) {
-        await Promise.race([
-          wcProvider.request({ method: "eth_chainId" }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Session wake timeout')), 2000))
-        ]);
-        console.log("✅ Session ready for transaction");
-      }
-    } catch (e: any) {
-      console.warn("⚠️ Transaction session wake warning:", e.message);
-    }
-
-    // Open wallet AFTER session is hot
-    console.log("📱 Opening wallet for transaction...");
-    await openWalletApp('transaction').catch(() => {});
-    
-    // Send transaction
     const tx = await vaultContract.mintWithPermit2(collateralAddress, btcAmount, permit, signature);
 
     console.log("✅ Transaction sent:", tx.hash);
-    
-    const receipt = await withTimeout(() => tx.wait(), 90000, "Transaction confirmation") as ethers.ContractTransactionReceipt;
+    const receipt = await tx.wait();
 
     return { success: true, txHash: receipt.hash };
 
@@ -244,7 +162,6 @@ export async function mintBTC1WithPermit2(
 
 /**
  * Redeem BTC1 tokens for collateral using EIP-2612 Permit
- * OPTIMIZED: Parallel fetch of nonce and domain data.
  */
 export async function redeemBTC1WithPermit(
   amount: string,
@@ -252,20 +169,17 @@ export async function redeemBTC1WithPermit(
   signer: ethers.Signer
 ): Promise<TransactionResult> {
   try {
-    // 1. Eager Setup
     const btc1Amount = ethers.parseUnits(amount, 8);
     const provider = signer.provider!;
     const btc1Contract = new ethers.Contract(CONTRACT_ADDRESSES.BTC1USD, ABIS.BTC1USD, provider);
 
-    // 2. PARALLEL FETCH: Address, Nonce, and Network
     console.log("⚡ Fetching account data...");
     const [userAddress, network, nonce] = await Promise.all([
       signer.getAddress(),
       provider.getNetwork(),
-      btc1Contract.nonces(await signer.getAddress()) // Effectively cached by most signers
+      btc1Contract.nonces(await signer.getAddress())
     ]);
 
-    // 3. Prepare Signing Data
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
     const domain = {
       name: "BTC1USD",
@@ -292,71 +206,16 @@ export async function redeemBTC1WithPermit(
       deadline: deadline,
     };
 
-    // PRECOMPUTE: Create vault contract BEFORE signature (instant transaction after)
-    const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
-    console.log("⚡ Vault contract ready for instant redeem");
-
-    // 4. CRITICAL: Wake WalletConnect session BEFORE opening wallet
-    // This ensures the session is ready when wallet app opens
-    console.log("🔄 Waking WalletConnect session...");
-    try {
-      const wcProvider = (signer.provider as any);
-      if (wcProvider?.request) {
-        // Give session 2 seconds to wake up (prevents "2 visits" issue)
-        await Promise.race([
-          wcProvider.request({ method: "eth_chainId" }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Session wake timeout')), 2000))
-        ]);
-        console.log("✅ WC session ready");
-      }
-    } catch (e: any) {
-      console.warn("⚠️ Session wake warning:", e.message);
-      // Continue anyway - wallet might still respond
-    }
-
-    // 5. NOW open wallet app - session is already hot
-    console.log("📱 Opening wallet for signature...");
-    await openWalletApp('signature').catch(() => {});
-
-    // 6. Request Signature (Session is hot, wallet is opening)
     console.log("⚡ Requesting EIP-2612 signature...");
-    
-    const signature = await withTimeout(
-      () => signer.signTypedData(domain, types, value),
-      60000, // 60s - allows time for wallet app launch
-      "EIP-2612 signature",
-      false
-    );
+    const signature = await signer.signTypedData(domain, types, value);
+    const sig = ethers.Signature.from(signature);
 
-    // 7. HOT PATH: Transaction (INSTANT - parse signature and send)
-    console.log("🚀 Parsing signature and broadcasting redeem...");
-    const sig = ethers.Signature.from(signature)
-
-    // Wake session again for transaction (signature may have taken time)
-    console.log("🔄 Re-waking session for transaction...");
-    try {
-      const wcProvider = (signer.provider as any);
-      if (wcProvider?.request) {
-        await Promise.race([
-          wcProvider.request({ method: "eth_chainId" }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Session wake timeout')), 2000))
-        ]);
-        console.log("✅ Session ready for transaction");
-      }
-    } catch (e: any) {
-      console.warn("⚠️ Transaction session wake warning:", e.message);
-    }
-
-    // Open wallet AFTER session is hot
-    console.log("📱 Opening wallet for transaction...");
-    await openWalletApp('transaction').catch(() => {});
-    
-    // Send transaction
+    console.log("🚀 Broadcasting redeem...");
+    const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
     const tx = await vaultContract.redeemWithPermit(btc1Amount, collateralAddress, deadline, sig.v, sig.r, sig.s);
 
     console.log("✅ Redeem sent:", tx.hash);
-
-    const receipt = await withTimeout(() => tx.wait(), 90000, "Transaction confirmation") as ethers.ContractTransactionReceipt; // 90s - allows time for wallet confirmation
+    const receipt = await tx.wait();
 
     return { success: true, txHash: receipt.hash };
 
@@ -378,11 +237,6 @@ export async function claimRewards(
   signer: ethers.Signer
 ): Promise<TransactionResult> {
   try {
-    // INSTANT: Wake wallet IMMEDIATELY at start
-    console.log("📱 Waking wallet early...");
-    openWalletApp('transaction').catch(() => {}); // Non-blocking, starts wallet launch
-    
-    // PRECOMPUTE: Parse amount and create contract BEFORE transaction
     const amountWei = ethers.parseUnits(amount, 8);
     const distributorContract = new ethers.Contract(
       CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR,
@@ -391,20 +245,10 @@ export async function claimRewards(
     );
 
     console.log("🎁 Claiming rewards...");
-    console.log("⚡ Contract ready for instant claim");
-    // Note: Wallet already opening from initial wake-up call
+    const tx = await distributorContract.claim(distributionId, index, account, amountWei, proof);
+    console.log("Claim tx sent:", tx.hash);
     
-    const receipt = await safeTransactionCall(
-      async () => {
-        const tx = await distributorContract.claim(distributionId, index, account, amountWei, proof);
-        console.log("Claim tx:", tx.hash);
-        return await tx.wait();
-      },
-      signer.provider!,
-      signer,
-      "Reward claim"
-    );
-
+    const receipt = await tx.wait();
     return { success: true, txHash: receipt.hash };
   } catch (error: any) {
     console.error("❌ Claim error:", error);
@@ -437,17 +281,9 @@ export async function mintBTC1(collateralAddress: string, amount: string, signer
 
 export async function redeemBTC1(amount: string, collateralAddress: string, signer: ethers.Signer) {
   try {
-    // Legacy fallback logic if absolutely needed, though usually redirected
     const vaultContract = new ethers.Contract(CONTRACT_ADDRESSES.VAULT, ABIS.VAULT, signer);
-    const receipt = await safeTransactionCall(
-      async () => {
-        const tx = await vaultContract.redeem(ethers.parseUnits(amount, 8), collateralAddress);
-        return await tx.wait();
-      },
-      signer.provider!,
-      signer,
-      "Redeem BTC1"
-    );
+    const tx = await vaultContract.redeem(ethers.parseUnits(amount, 8), collateralAddress);
+    const receipt = await tx.wait();
     return { success: true, txHash: receipt.hash };
   } catch (e: any) { return handleTransactionError(e); }
 }
@@ -455,11 +291,7 @@ export async function redeemBTC1(amount: string, collateralAddress: string, sign
 export async function checkBTC1Approval(userAddress: string, amount: string, provider: ethers.Provider): Promise<ApprovalStatus> {
   try {
     const btc1Contract = new ethers.Contract(CONTRACT_ADDRESSES.BTC1USD, ABIS.BTC1USD, provider);
-    const allowance = await safeContractCall(
-      () => btc1Contract.allowance(userAddress, CONTRACT_ADDRESSES.VAULT),
-      provider,
-      "Check BTC1 allowance"
-    );
+    const allowance = await btc1Contract.allowance(userAddress, CONTRACT_ADDRESSES.VAULT);
     return { isApproved: allowance >= ethers.parseUnits(amount, 8), currentAllowance: ethers.formatUnits(allowance, 8) };
   } catch (e) { return { isApproved: false, currentAllowance: "0" }; }
 }
@@ -467,15 +299,8 @@ export async function checkBTC1Approval(userAddress: string, amount: string, pro
 export async function approveBTC1(amount: string, signer: ethers.Signer): Promise<TransactionResult> {
   try {
     const contract = new ethers.Contract(CONTRACT_ADDRESSES.BTC1USD, ABIS.BTC1USD, signer);
-    const receipt = await safeTransactionCall(
-      async () => {
-        const tx = await contract.approve(CONTRACT_ADDRESSES.VAULT, ethers.parseUnits(amount, 8));
-        return await tx.wait();
-      },
-      signer.provider!,
-      signer,
-      "BTC1 approval"
-    );
+    const tx = await contract.approve(CONTRACT_ADDRESSES.VAULT, ethers.parseUnits(amount, 8));
+    const receipt = await tx.wait();
     return { success: true, txHash: receipt.hash };
   } catch (e: any) { return handleTransactionError(e); }
 }

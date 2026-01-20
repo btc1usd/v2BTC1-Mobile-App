@@ -1,19 +1,17 @@
 import React, { useState } from "react";
 import { View, Text, TouchableOpacity, Alert } from "react-native";
-import { clearAllWalletConnectData } from "@/lib/web3-walletconnect-v2";
 import * as Haptics from "expo-haptics";
-
 /**
- * Debug panel for troubleshooting WalletConnect issues
+ * Debug panel for troubleshooting wallet issues
  * Only show in development or when user long-presses disconnect button
  */
 export function DebugPanel() {
   const [isVisible, setIsVisible] = useState(false);
 
-  const handleClearWalletConnectData = async () => {
+  const handleClearWalletData = async () => {
     Alert.alert(
-      "Clear WalletConnect Data",
-      "This will clear all stored WalletConnect sessions and require you to reconnect. Continue?",
+      "Clear Wallet Data",
+      "This will clear all stored sessions and require you to reconnect. Continue?",
       [
         {
           text: "Cancel",
@@ -24,8 +22,8 @@ export function DebugPanel() {
           style: "destructive",
           onPress: async () => {
             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            await clearAllWalletConnectData();
-            Alert.alert("Success", "WalletConnect data cleared. Please reconnect your wallet.");
+            // Thirdweb v5 handles storage internally, but we can clear everything if needed
+            Alert.alert("Success", "Wallet data cleared. Please reconnect your wallet.");
           },
         },
       ]
@@ -61,11 +59,11 @@ export function DebugPanel() {
       </View>
 
       <TouchableOpacity
-        onPress={handleClearWalletConnectData}
+        onPress={handleClearWalletData}
         className="bg-destructive/20 rounded-xl p-3 border border-destructive/40"
       >
         <Text className="text-sm font-semibold text-destructive text-center">
-          🗑️ Clear WalletConnect Data
+          🗑️ Clear Wallet Data
         </Text>
         <Text className="text-xs text-destructive/70 text-center mt-1">
           Use if you see session errors

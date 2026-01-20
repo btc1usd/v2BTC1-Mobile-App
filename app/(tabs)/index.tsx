@@ -4,7 +4,7 @@ import { BlurView } from "expo-blur";
 
 import { LandingScreen } from "@/components/landing-screen";
 import { DashboardScreen } from "@/components/dashboard-screen";
-import { useWallet } from "@/hooks/use-wallet-wc";
+import { useWallet } from "@/hooks/use-wallet";
 
 /* ============================================================================
    Web3 Error Boundary – Polished, Production-grade UI

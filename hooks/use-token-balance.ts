@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ethers } from "ethers";
 import { ABIS } from "@/lib/shared/contracts";
-import { safeContractCall, isExpiredSessionError } from "@/lib/wallet-keep-alive";
 
 export interface TokenBalanceResult {
   balance: string;
@@ -109,18 +108,10 @@ export function useTokenBalance({
         readProvider
       );
 
-      // Use safe contract call with automatic retry on session expiry
-      const [rawBalance, tokenDecimals] = await safeContractCall(
-        async () => {
-          console.log('📞 Calling token.balanceOf and token.decimals...');
-          return Promise.all([
-            token.balanceOf(userAddress) as Promise<bigint>,
-            token.decimals() as Promise<number>,
-          ]);
-        },
-        readProvider,
-        `Token ${tokenAddress.slice(0, 6)}...${tokenAddress.slice(-4)} balance`
-      );
+      const [rawBalance, tokenDecimals] = await Promise.all([
+        token.balanceOf(userAddress) as Promise<bigint>,
+        token.decimals() as Promise<number>,
+      ]);
 
       const formattedBalance = ethers.formatUnits(
         rawBalance,
@@ -146,15 +137,10 @@ export function useTokenBalance({
         err?.message ||
         "Failed to fetch token balance";
 
-      // Check if it's a session expiry error
-      const isSessionError = isExpiredSessionError(err);
-      const errorMsg = isSessionError 
-        ? 'Wallet session expired. Please reconnect.'
-        : message;
+      const errorMsg = message;
 
       console.error("❌ useTokenBalance error:", {
         errorMsg,
-        isSessionError,
         originalError: message,
         code: err?.code,
         tokenAddress,

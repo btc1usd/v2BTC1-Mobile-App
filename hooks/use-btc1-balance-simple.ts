@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
-import { safeContractCall } from "@/lib/wallet-keep-alive";
 
 export function useBtc1Balance() {
   const { readProvider, address, chainId } = useWeb3();
@@ -52,11 +51,7 @@ export function useBtc1Balance() {
         return;
       }
 
-      const bal = await safeContractCall(
-        async () => contract.balanceOf(address),
-        providerToUse,
-        "BTC1 balance"
-      );
+      const bal = await contract.balanceOf(address);
       // BTC1 uses 8 decimals (like Bitcoin)
       const formatted = ethers.formatUnits(bal, 8);
       

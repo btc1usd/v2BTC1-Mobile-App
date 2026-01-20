@@ -7,18 +7,25 @@ export function useWallet() {
     isConnected, 
     isConnecting, 
     error,
-    connectWallet, 
     disconnectWallet,
+    signer,
+    switchChain,
+    readProvider,
   } = useWeb3();
 
   return {
     address,
     chainId,
-    chain: { id: chainId || 84532, name: chainId === 84532 ? "Base Sepolia" : "Unknown" },
+    chain: { 
+      id: chainId || 84532, 
+      name: chainId === 84532 ? "Base Sepolia" : (chainId === 8453 ? "Base Mainnet" : "Unknown") 
+    },
     isConnected,
     isConnecting,
     error,
-    connectWallet,
     disconnectWallet,
+    signer,
+    switchChain,
+    readProvider,
   };
 }

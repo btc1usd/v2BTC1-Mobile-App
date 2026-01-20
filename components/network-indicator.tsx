@@ -98,11 +98,11 @@ export function NetworkIndicator({
  */
 interface NetworkBannerProps {
   chainId: number | null;
-  wcProvider?: any; // WalletConnect provider for network switching
   onSwitchSuccess?: () => void;
 }
 
-export function NetworkBanner({ chainId, wcProvider, onSwitchSuccess }: NetworkBannerProps) {
+export function NetworkBanner({ chainId, onSwitchSuccess }: NetworkBannerProps) {
+  const { switchChain } = require("@/lib/web3-walletconnect-v2").useWeb3();
   const networkInfo = getNetworkInfo(chainId);
   const [isSwitching, setIsSwitching] = React.useState(false);
 
@@ -112,44 +112,26 @@ export function NetworkBanner({ chainId, wcProvider, onSwitchSuccess }: NetworkB
   }
 
   const handleSwitchNetwork = async () => {
-    if (!wcProvider) {
-      Alert.alert(
-        "Cannot Switch Network",
-        "Please switch networks manually in your wallet app.",
-        [{ text: "OK" }]
-      );
-      return;
-    }
-
     setIsSwitching(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const { requestNetworkSwitch, DEFAULT_CHAIN_ID } = require("@/lib/network-manager");
+      const { DEFAULT_CHAIN_ID } = require("@/lib/network-manager");
       
-      const result = await requestNetworkSwitch(wcProvider, DEFAULT_CHAIN_ID);
+      await switchChain(DEFAULT_CHAIN_ID);
 
-      if (result.success) {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          "✅ Network Switched",
-          "Successfully switched to Base Sepolia network.",
-          [{ text: "OK" }]
-        );
-        onSwitchSuccess?.();
-      } else {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert(
-          "❌ Switch Failed",
-          result.error || "Failed to switch network. Please switch manually in your wallet app.",
-          [{ text: "OK" }]
-        );
-      }
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(
+        "✅ Network Switched",
+        "Successfully switched to Base Sepolia network.",
+        [{ text: "OK" }]
+      );
+      onSwitchSuccess?.();
     } catch (error: any) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
-        "❌ Error",
-        error.message || "An error occurred while switching networks.",
+        "❌ Switch Failed",
+        error.message || "Failed to switch network. Please switch manually in your wallet app.",
         [{ text: "OK" }]
       );
     } finally {

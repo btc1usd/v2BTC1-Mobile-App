@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Linking, RefreshControl } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
-import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { useDistributionData } from "@/hooks/use-distribution-data-simple";
 import * as Haptics from "expo-haptics";
 import { claimRewards, getTxUrl } from "@/lib/contract-utils";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
 import { WalletHeader } from "@/components/wallet-header";
-import { useWallet } from "@/hooks/use-wallet-wc";
+import { useWallet } from "@/hooks/use-wallet";
 import { ErrorModal } from "@/components/error-modal";
 import {
   fetchUserMerkleProof,
@@ -22,10 +21,15 @@ import {
 type ClaimStep = "input" | "claiming" | "success" | "error";
 
 export default function RewardsScreen() {
-  const web3 = useWeb3();
-  const { address, isConnected, chainId, signer, wcProvider, readProvider } = web3;
+  const {
+    address,
+    isConnected,
+    chainId,
+    signer,
+    readProvider,
+    disconnectWallet
+  } = useWallet();
   const { distributionCount, timeUntilDistribution, canDistribute, lastDistributionDate } = useDistributionData();
-  const { disconnectWallet } = useWallet();
   
   const [claimingDistributionId, setClaimingDistributionId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -150,7 +154,7 @@ export default function RewardsScreen() {
   };
 
   const handleClaim = async (claim: MerkleClaim) => {
-    if (!signer || !wcProvider || !address) return;
+    if (!signer || !address) return;
     
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setClaimingDistributionId(claim.distribution_id);
@@ -164,27 +168,7 @@ export default function RewardsScreen() {
       });
       
       // CRITICAL: Wake wallet immediately on user intent
-      console.log("🔔 Waking wallet for claim transaction...");
-      
-      // Get fresh provider and signer from WalletConnect
-      const freshProvider = new ethers.BrowserProvider(wcProvider);
-      
-      // Wake the wallet session
-      try {
-        await freshProvider.send("eth_accounts", []);
-      } catch (sessionError: any) {
-        console.error("Session error:", sessionError);
-        if (sessionError.message?.includes("session") || sessionError.message?.includes("topic")) {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          setErrorMessage("Wallet connection lost. Please reconnect your wallet and try again.");
-          setShowErrorModal(true);
-          setClaimingDistributionId(null);
-          return;
-        }
-        throw sessionError;
-      }
-      
-      const freshSigner = await freshProvider.getSigner();
+      console.log("🔔 Initiating claim transaction...");
       
       // Call claim with real merkle proof from Supabase
       const result = await claimRewards(
@@ -193,7 +177,7 @@ export default function RewardsScreen() {
         address,
         ethers.formatUnits(claim.amount, 8), // Convert to human-readable format
         claim.proof,
-        freshSigner
+        signer
       );
       
       if (!result.success) {

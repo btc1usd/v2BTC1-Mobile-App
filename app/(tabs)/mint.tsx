@@ -13,7 +13,6 @@ import * as Haptics from "expo-haptics";
 import { ethers } from "ethers"; // OPTIMIZATION: Top-level import for instant access
 
 import { ScreenContainer } from "@/components/screen-container";
-import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { useVaultStats } from "@/hooks/use-vault-stats-simple";
 import { useCollateralBalances } from "@/hooks/use-collateral-balances";
 import { useNetworkEnforcement } from "@/hooks/use-network-enforcement";
@@ -23,7 +22,7 @@ import { NetworkBanner } from "@/components/network-indicator";
 import { NetworkGuard } from "@/components/network-guard";
 import { WalletHeader } from "@/components/wallet-header";
 import { NetworkSwitchModal } from "@/components/network-switch-modal";
-import { useWallet } from "@/hooks/use-wallet-wc";
+import { useWallet } from "@/hooks/use-wallet";
 import { ErrorModal } from "@/components/error-modal";
 
 // Unified steps since contract-utils handles the flow atomically
@@ -33,16 +32,15 @@ const TARGET_CHAIN_ID = 84532; // Base Sepolia
 const TARGET_CHAIN_NAME = "Base Sepolia";
 
 export default function MintScreen() {
-  const web3 = useWeb3();
   const {
     address,
     isConnected,
     chainId,
-    wcProvider,
     readProvider,
     switchChain,
-  } = web3;
-  const { disconnectWallet } = useWallet();
+    signer,
+    disconnectWallet
+  } = useWallet();
 
   const [amount, setAmount] = useState("");
   const [selectedToken, setSelectedToken] = useState(COLLATERAL_TOKENS[0]);
@@ -70,8 +68,6 @@ export default function MintScreen() {
   const isOnCorrectNetwork = chainId === TARGET_CHAIN_ID;
 
   const { enforceNetwork } = useNetworkEnforcement({
-    provider: readProvider,
-    wcProvider,
     chainId,
     isConnected,
   });
@@ -130,7 +126,7 @@ export default function MintScreen() {
   };
 
   const handleMint = async () => {
-    if (!wcProvider || !address) return;
+    if (!address || !signer) return;
 
     if (!isOnCorrectNetwork) {
       setShowNetworkModal(true);
@@ -156,12 +152,8 @@ export default function MintScreen() {
 
       console.log("🚀 Starting mint flow (Instant)...");
       
-      // OPTIMIZATION: Create provider/signer instantly without lazy loading
-      const freshProvider = new ethers.BrowserProvider(wcProvider);
-      const freshSigner = await freshProvider.getSigner();
-
       // OPTIMIZATION: Pass directly to optimized util
-      const result = await mintBTC1WithPermit2(selectedToken.address, amount, freshSigner);
+      const result = await mintBTC1WithPermit2(selectedToken.address, amount, signer);
       
       if (!result.success) throw new Error(result.error);
 
@@ -326,7 +318,7 @@ export default function MintScreen() {
             <WalletHeader address={address} chainId={chainId} compact onDisconnect={disconnectWallet} />
           
             <View className="px-6 pt-2 pb-2">
-              <NetworkBanner chainId={chainId} wcProvider={wcProvider} />
+              <NetworkBanner chainId={chainId} />
             </View>
 
             <View className="px-6">

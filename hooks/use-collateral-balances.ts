@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ethers } from "ethers";
 import { ABIS, COLLATERAL_TOKENS } from "@/lib/shared/contracts";
-import { safeContractCall } from "@/lib/wallet-keep-alive";
 import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 
 /**
@@ -114,17 +113,10 @@ export function useCollateralBalances({
         readProvider
       );
 
-      const [rawBalance, contractDecimals] = await safeContractCall(
-        async () => {
-          const results = await Promise.all([
-            tokenContract.balanceOf(address) as Promise<bigint>,
-            tokenContract.decimals() as Promise<number>,
-          ]);
-          return results;
-        },
-        readProvider,
-        `${token.symbol} balance`
-      );
+      const [rawBalance, contractDecimals] = await Promise.all([
+        tokenContract.balanceOf(address) as Promise<bigint>,
+        tokenContract.decimals() as Promise<number>,
+      ]);
 
       const formatted = ethers.formatUnits(rawBalance, contractDecimals);
 

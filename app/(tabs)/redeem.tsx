@@ -13,7 +13,6 @@ import * as Haptics from "expo-haptics";
 import { ethers } from "ethers"; // OPTIMIZATION: Top-level import
 
 import { ScreenContainer } from "@/components/screen-container";
-import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { useVaultStats } from "@/hooks/use-vault-stats-simple";
 import { useBtc1Balance } from "@/hooks/use-btc1-balance-simple";
 import { useNetworkEnforcement } from "@/hooks/use-network-enforcement";
@@ -22,21 +21,20 @@ import { COLLATERAL_TOKENS } from "@/lib/shared/contracts";
 import { NetworkBanner } from "@/components/network-indicator";
 import { NetworkGuard } from "@/components/network-guard";
 import { WalletHeader } from "@/components/wallet-header";
-import { useWallet } from "@/hooks/use-wallet-wc";
+import { useWallet } from "@/hooks/use-wallet";
 import { ErrorModal } from "@/components/error-modal";
 
 type RedeemStep = "idle" | "signing" | "success" | "error";
 
 export default function RedeemScreen() {
-  const web3 = useWeb3();
   const {
     address,
     isConnected,
     chainId,
-    wcProvider,
     readProvider,
-  } = web3;
-  const { disconnectWallet } = useWallet();
+    signer,
+    disconnectWallet
+  } = useWallet();
 
   const [amount, setAmount] = useState("");
   const [selectedToken, setSelectedToken] = useState(COLLATERAL_TOKENS[0]);
@@ -59,8 +57,6 @@ export default function RedeemScreen() {
   }, [isProcessing]);
 
   const { enforceNetwork } = useNetworkEnforcement({
-    provider: readProvider,
-    wcProvider,
     chainId,
     isConnected,
   });
@@ -101,7 +97,7 @@ export default function RedeemScreen() {
   const canRedeem = amount && Number(amount) > 0 && Number(amount) <= balance && step === "idle";
 
   const handleRedeem = async () => {
-    if (!wcProvider || !address) return;
+    if (!address || !signer) return;
 
     const ok = await enforceNetwork("Redeem BTC1");
     if (!ok) return;
@@ -121,12 +117,8 @@ export default function RedeemScreen() {
 
       console.log("🚀 Starting redeem flow (Instant)...");
       
-      // OPTIMIZATION: Instant provider creation, no dynamic import
-      const freshProvider = new ethers.BrowserProvider(wcProvider);
-      const freshSigner = await freshProvider.getSigner();
-
       // OPTIMIZATION: Parallel execution in utility
-      const result = await redeemBTC1WithPermit(amount, selectedToken.address, freshSigner);
+      const result = await redeemBTC1WithPermit(amount, selectedToken.address, signer);
       
       if (!result.success) throw new Error(result.error);
 
@@ -260,7 +252,7 @@ export default function RedeemScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View className="px-6 pt-2 pb-2">
-            <NetworkBanner chainId={chainId} wcProvider={wcProvider} />
+            <NetworkBanner chainId={chainId} />
           </View>
 
           <View className="px-6">

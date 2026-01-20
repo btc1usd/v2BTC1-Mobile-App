@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { ScreenContainer } from "./screen-container";
-import { useWallet } from "@/hooks/use-wallet-wc";
+import { useWallet } from "@/hooks/use-wallet";
 import { useBtc1Balance } from "@/hooks/use-btc1-balance-simple";
 import { useVaultStats } from "@/hooks/use-vault-stats-simple";
 import { useDistributionData } from "@/hooks/use-distribution-data-simple";
@@ -28,7 +28,6 @@ export function DashboardScreen() {
   const { address, disconnectWallet } = useWallet();
   const web3 = useWeb3();
   const { readProvider, chainId } = web3;
-  const wcProvider = web3.wcProvider;
   const colorScheme = useColorScheme();
   
   const router = useRouter();
@@ -205,7 +204,7 @@ export function DashboardScreen() {
 
         {/* Header */}
         <View className="px-6 pt-2 pb-2">
-          <NetworkBanner chainId={chainId} wcProvider={wcProvider} />
+          <NetworkBanner chainId={chainId} />
           <DebugPanel />
         </View>
 

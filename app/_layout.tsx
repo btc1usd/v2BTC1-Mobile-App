@@ -1,3 +1,6 @@
+// CRITICAL: Must be absolute first - Load all crypto polyfills
+import "../polyfills";
+
 import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
@@ -9,6 +12,7 @@ import { Platform, Linking, AppState } from "react-native";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { Web3Provider } from "@/lib/web3-walletconnect-v2";
+import { ThirdwebProvider } from "thirdweb/react";
 
 import {
   SafeAreaFrameContext,
@@ -121,19 +125,21 @@ export default function RootLayout() {
 
   const content = (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Web3Provider>
-        <trpc.Provider client={trpcClient} queryClient={queryClient}>
-          <QueryClientProvider client={queryClient}>
-          {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
-          {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="oauth/callback" />
-          </Stack>
-          <StatusBar style="auto" />
-          </QueryClientProvider>
-        </trpc.Provider>
-      </Web3Provider>
+      <ThirdwebProvider>
+        <Web3Provider>
+          <trpc.Provider client={trpcClient} queryClient={queryClient}>
+            <QueryClientProvider client={queryClient}>
+            {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
+            {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="oauth/callback" />
+            </Stack>
+            <StatusBar style="auto" />
+            </QueryClientProvider>
+          </trpc.Provider>
+        </Web3Provider>
+      </ThirdwebProvider>
     </GestureHandlerRootView>
   );
 
