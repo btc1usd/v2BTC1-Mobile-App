@@ -9,6 +9,7 @@ import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
 import { WalletHeader } from "@/components/wallet-header";
 import { useWallet } from "@/hooks/use-wallet";
 import { ErrorModal } from "@/components/error-modal";
+import { TransactionConfirmModal } from "@/components/transaction-confirm-modal";
 import {
   fetchUserMerkleProof,
   fetchUserUnclaimedRewards,
@@ -42,6 +43,8 @@ export default function RewardsScreen() {
   const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [currentClaim, setCurrentClaim] = useState<MerkleClaim | null>(null);
   
   useEffect(() => {
     const fetchRewards = async () => {
@@ -157,14 +160,23 @@ export default function RewardsScreen() {
     if (!signer || !address) return;
     
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setClaimingDistributionId(claim.distribution_id);
+    
+    // Set current claim and show confirmation modal
+    setCurrentClaim(claim);
+    setShowConfirmModal(true);
+  };
+
+  const confirmClaim = async () => {
+    if (!currentClaim || !signer || !address) return;
+    
+    setClaimingDistributionId(currentClaim.distribution_id);
     
     try {
       console.log('[Claim] Starting claim:', {
-        distributionId: claim.distribution_id,
-        index: claim.index,
-        amount: claim.amount,
-        proofLength: claim.proof.length,
+        distributionId: currentClaim.distribution_id,
+        index: currentClaim.index,
+        amount: currentClaim.amount,
+        proofLength: currentClaim.proof.length,
       });
       
       // CRITICAL: Wake wallet immediately on user intent
@@ -172,11 +184,11 @@ export default function RewardsScreen() {
       
       // Call claim with real merkle proof from Supabase
       const result = await claimRewards(
-        claim.distribution_id,
-        claim.index,
+        currentClaim.distribution_id,
+        currentClaim.index,
         address,
-        ethers.formatUnits(claim.amount, 8), // Convert to human-readable format
-        claim.proof,
+        ethers.formatUnits(currentClaim.amount, 8), // Convert to human-readable format
+        currentClaim.proof,
         signer
       );
       
@@ -189,18 +201,18 @@ export default function RewardsScreen() {
       // IMMEDIATE: Remove claimed reward from UI (optimistic update)
       console.log('[Claim] Removing claimed reward from UI...');
       setUnclaimedRewardsList(prev => 
-        prev.filter(c => c.distribution_id !== claim.distribution_id)
+        prev.filter(c => c.distribution_id !== currentClaim.distribution_id)
       );
       
       // Recalculate available rewards
       const newTotal = unclaimedRewardsList
-        .filter(c => c.distribution_id !== claim.distribution_id)
+        .filter(c => c.distribution_id !== currentClaim.distribution_id)
         .reduce((sum, c) => sum + BigInt(c.amount), BigInt(0));
       setAvailableRewards(ethers.formatUnits(newTotal, 8));
 
       // Mark as claimed in Supabase for faster future fetches
       console.log('[Claim] Updating Supabase...');
-      const marked = await markClaimAsClaimed(claim.distribution_id, address);
+      const marked = await markClaimAsClaimed(currentClaim.distribution_id, address);
       if (marked) {
         console.log('[Claim] Supabase updated successfully');
       } else {
@@ -243,7 +255,15 @@ export default function RewardsScreen() {
       setShowErrorModal(true);
     } finally {
       setClaimingDistributionId(null);
+      setShowConfirmModal(false);
+      setCurrentClaim(null);
     }
+  };
+
+  const cancelClaim = () => {
+    setShowConfirmModal(false);
+    setCurrentClaim(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   // Pending rewards list from Supabase

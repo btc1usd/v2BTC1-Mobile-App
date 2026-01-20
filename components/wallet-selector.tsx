@@ -13,15 +13,35 @@ import { defineChain } from "thirdweb";
 import { DEFAULT_CHAIN_ID } from "@/lib/network-manager";
 
 const wallets = [
+  // In-App Wallet with Social Login + Passkey
   inAppWallet({
     auth: {
-      options: ["google", "apple", "facebook", "email"],
+      options: [
+        "google",
+        "apple",
+        "facebook",
+        "email",
+        "phone",   // SMS authentication (more reliable than passkey)
+      ],
+      // Removed passkeyDomain temporarily due to native passkey issues
+      // passkeyDomain: "https://btc1usd-mobile.pages.dev", // Required for native passkey support
+      // redirectUrl: "btc1usd://auth", // App deep link for authentication return
     },
   }),
-  createWallet("io.metamask"),
-  createWallet("com.coinbase.wallet"),
-  createWallet("com.trustwallet.app"),
-  createWallet("me.rainbow"),
+  
+  // Mobile Wallets
+  createWallet("io.metamask"),           // MetaMask
+  createWallet("com.coinbase.wallet"),   // Coinbase Wallet
+  createWallet("me.rainbow"),            // Rainbow
+  createWallet("com.trustwallet.app"),   // Trust Wallet
+  
+  // Additional Popular Wallets
+  createWallet("io.zerion.wallet"),      // Zerion
+  createWallet("app.phantom"),            // Phantom
+  createWallet("io.rabby"),               // Rabby
+  
+  // WalletConnect (catch-all for any wallet)
+  createWallet("walletConnect"),
 ];
 
 interface Props {
@@ -66,11 +86,13 @@ export function WalletSelector({ onConnected }: Props) {
           <Text className="text-xl mr-3">💡</Text>
           <View className="flex-1">
             <Text className="text-sm font-semibold text-foreground mb-2">
-              What is a Wallet?
+              Multiple Ways to Connect
             </Text>
             <Text className="text-xs text-muted leading-5">
-              A wallet lets you connect to BTC1USD and manage your funds. 
-              We recommend MetaMask or Rainbow for the best experience.
+              • Sign in with Google, Apple, or Email{"\n"}
+              • Use Passkey for biometric authentication{"\n"}
+              • Connect MetaMask, Coinbase, Rainbow, or any mobile wallet{"\n"}
+              • Use WalletConnect for 300+ supported wallets
             </Text>
           </View>
         </View>

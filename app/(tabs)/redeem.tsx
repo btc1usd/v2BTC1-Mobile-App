@@ -23,6 +23,7 @@ import { NetworkGuard } from "@/components/network-guard";
 import { WalletHeader } from "@/components/wallet-header";
 import { useWallet } from "@/hooks/use-wallet";
 import { ErrorModal } from "@/components/error-modal";
+import { TransactionConfirmModal } from "@/components/transaction-confirm-modal";
 
 type RedeemStep = "idle" | "signing" | "success" | "error";
 
@@ -43,7 +44,8 @@ export default function RedeemScreen() {
   const [error, setError] = useState("");
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false); 
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false); 
   
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -109,10 +111,16 @@ export default function RedeemScreen() {
       return;
     }
 
+    // Show confirmation modal
+    setShowConfirmModal(true);
+  };
+
+  const confirmRedeem = async () => {
     try {
       setError("");
       setStep("signing");
       setIsProcessing(true);
+      setShowConfirmModal(false); // Hide confirmation modal
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       console.log("🚀 Starting redeem flow (Instant)...");
@@ -154,9 +162,15 @@ export default function RedeemScreen() {
       setShowErrorModal(true);
       setStep("error");
       setIsProcessing(false);
+      setShowConfirmModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setTimeout(() => setStep("idle"), 4000);
     }
+  };
+
+  const cancelRedeem = () => {
+    setShowConfirmModal(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const setMaxAmount = () => {
@@ -402,6 +416,20 @@ export default function RedeemScreen() {
               </Text>
             </View>
           </View>
+    
+          {/* CONFIRMATION MODAL */}
+          <TransactionConfirmModal
+            visible={showConfirmModal}
+            title="Confirm Redeem"
+            description="Review and confirm your redeem transaction"
+            actionText="Redeem"
+            amount={amount}
+            token="BTC1"
+            onConfirm={confirmRedeem}
+            onCancel={cancelRedeem}
+            isProcessing={step === "signing"}
+            processingMessage="Redeeming BTC1 for collateral..."
+          />
         </ScrollView>
       </ScreenContainer>
     </NetworkGuard>

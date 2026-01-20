@@ -24,6 +24,7 @@ import { WalletHeader } from "@/components/wallet-header";
 import { NetworkSwitchModal } from "@/components/network-switch-modal";
 import { useWallet } from "@/hooks/use-wallet";
 import { ErrorModal } from "@/components/error-modal";
+import { TransactionConfirmModal } from "@/components/transaction-confirm-modal";
 
 // Unified steps since contract-utils handles the flow atomically
 type MintStep = "idle" | "processing" | "success" | "error";
@@ -51,7 +52,8 @@ export default function MintScreen() {
   const [errorMessage, setErrorMessage] = useState("");
   const [showNetworkModal, setShowNetworkModal] = useState(false);
   const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false); 
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false); 
   
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -144,10 +146,16 @@ export default function MintScreen() {
       return;
     }
 
+    // Show confirmation modal
+    setShowConfirmModal(true);
+  };
+
+  const confirmMint = async () => {
     try {
       setError("");
       setStep("processing");
       setIsProcessing(true);
+      setShowConfirmModal(false); // Hide confirmation modal
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       console.log("🚀 Starting mint flow (Instant)...");
@@ -190,9 +198,15 @@ export default function MintScreen() {
       setShowErrorModal(true);
       setStep("error");
       setIsProcessing(false);
+      setShowConfirmModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setTimeout(() => setStep("idle"), 4000);
     }
+  };
+
+  const cancelMint = () => {
+    setShowConfirmModal(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const setMaxAmount = () => {
@@ -505,6 +519,20 @@ export default function MintScreen() {
                 </Text>
               </View>
             </View>
+
+            {/* CONFIRMATION MODAL */}
+            <TransactionConfirmModal
+              visible={showConfirmModal}
+              title="Confirm Mint"
+              description="Review and confirm your mint transaction"
+              actionText="Mint"
+              amount={amount}
+              token={selectedToken.symbol}
+              onConfirm={confirmMint}
+              onCancel={cancelMint}
+              isProcessing={step === "processing"}
+              processingMessage="Minting BTC1 tokens..."
+            />
           </ScrollView>
         </ScreenContainer>
       </NetworkGuard>
