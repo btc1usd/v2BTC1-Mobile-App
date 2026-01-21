@@ -258,49 +258,201 @@ export async function claimRewards(
     );
 
     // Try to determine which address format was used to generate the merkle tree
-    let accountForClaim = lowercaseAccount; // Default to lowercase (most common)
+    let accountForClaim = checksummedAccount; // Default to checksummed (safer)
     
-    // Try to fetch on-chain merkle root and test both formats
+    // CRITICAL: Verify distribution exists and has valid merkle root on-chain
+    console.log('\n🔍 Verifying distribution ID', distributionId, 'on MerkleDistributor contract...');
     try {
       const provider = distributorContract.runner?.provider || signer.provider;
       if (provider) {
-        const distInfo = await distributorContract.distributions(distributionId);
-        const onChainRoot = distInfo.merkleRoot || distInfo[0];
+        const distInfo = await distributorContract.getDistributionInfo(distributionId);
+        // Return order: (bytes32 root, uint256 totalTokens, uint256 totalClaimed, uint256 timestamp, bool finalized)
+        const onChainRoot = distInfo[0] || distInfo.root;
+        const totalTokens = distInfo[1] || distInfo.totalTokens;
+        const totalClaimed = distInfo[2] || distInfo.totalClaimed;
+        const timestamp = distInfo[3] || distInfo.timestamp;
+        const finalized = distInfo[4] || distInfo.finalized;
         
-        // Calculate leaf hash with lowercase
-        const leafHashLowercase = ethers.solidityPackedKeccak256(
+        console.log('📊 Distribution Info:', {
+          distributionId,
+          merkleRoot: onChainRoot,
+          totalTokens: totalTokens ? ethers.formatUnits(totalTokens, 8) : '0',
+          totalClaimed: totalClaimed ? ethers.formatUnits(totalClaimed, 8) : '0',
+          timestamp: timestamp ? new Date(Number(timestamp) * 1000).toISOString() : 'N/A',
+          finalized: finalized || false,
+          hasValidRoot: onChainRoot !== ethers.ZeroHash && onChainRoot !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+        });
+        
+        if (onChainRoot === ethers.ZeroHash || onChainRoot === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+          console.error('❌❌❌ CRITICAL ERROR: Merkle root is ZERO for distribution', distributionId);
+          console.error('🚫 This distribution has NOT been set up on-chain!');
+          console.error('🛠️ Action required: Call updateDistribution() on MerkleDistributor contract');
+          throw new Error(`Distribution ${distributionId} has not been initialized on-chain. Merkle root is zero.`);
+        }
+        
+        if (!finalized) {
+          console.warn('⚠️ Distribution is NOT finalized yet');
+        }
+        
+        // Continue with format testing...
+        console.log('\n🧪 Testing leaf hash formats against on-chain root...');
+        
+        // TEST 1: Standard format (index, address, amount)
+        const test1_lowercase = ethers.solidityPackedKeccak256(
           ["uint256", "address", "uint256"],
           [index, lowercaseAccount, amountWei]
         );
         
-        // Calculate leaf hash with checksummed
-        const leafHashChecksummed = ethers.solidityPackedKeccak256(
+        const test1_checksummed = ethers.solidityPackedKeccak256(
           ["uint256", "address", "uint256"],
           [index, checksummedAccount, amountWei]
         );
         
-        console.log('🔍 Testing address formats:', {
+        // TEST 2: Format with distributionId FIRST (distributionId, index, address, amount)
+        const test2_lowercase = ethers.solidityPackedKeccak256(
+          ["uint256", "uint256", "address", "uint256"],
+          [distributionId, index, lowercaseAccount, amountWei]
+        );
+        
+        const test2_checksummed = ethers.solidityPackedKeccak256(
+          ["uint256", "uint256", "address", "uint256"],
+          [distributionId, index, checksummedAccount, amountWei]
+        );
+        
+        // TEST 3: Format with distributionId LAST (index, address, amount, distributionId)
+        const test3_lowercase = ethers.solidityPackedKeccak256(
+          ["uint256", "address", "uint256", "uint256"],
+          [index, lowercaseAccount, amountWei, distributionId]
+        );
+        
+        const test3_checksummed = ethers.solidityPackedKeccak256(
+          ["uint256", "address", "uint256", "uint256"],
+          [index, checksummedAccount, amountWei, distributionId]
+        );
+        
+        // TEST 4: Only address and amount (address, amount) - simple merkle tree
+        const test4_lowercase = ethers.solidityPackedKeccak256(
+          ["address", "uint256"],
+          [lowercaseAccount, amountWei]
+        );
+        
+        const test4_checksummed = ethers.solidityPackedKeccak256(
+          ["address", "uint256"],
+          [checksummedAccount, amountWei]
+        );
+        
+        // TEST 4b: ABI.encode (padded) instead of packed
+        const test4b_lowercase = ethers.keccak256(
+          ethers.AbiCoder.defaultAbiCoder().encode(
+            ["address", "uint256"],
+            [lowercaseAccount, amountWei]
+          )
+        );
+        
+        const test4b_checksummed = ethers.keccak256(
+          ethers.AbiCoder.defaultAbiCoder().encode(
+            ["address", "uint256"],
+            [checksummedAccount, amountWei]
+          )
+        );
+        
+        // TEST 5: Address only (for single-leaf trees)
+        const test5_lowercase = ethers.solidityPackedKeccak256(
+          ["address"],
+          [lowercaseAccount]
+        );
+        
+        const test5_checksummed = ethers.solidityPackedKeccak256(
+          ["address"],
+          [checksummedAccount]
+        );
+        
+        console.log('🔍 Testing ALL possible leaf structures:', {
           onChainRoot,
-          leafHashLowercase,
-          leafHashChecksummed,
-          lowercaseMatch: leafHashLowercase.toLowerCase() === onChainRoot.toLowerCase(),
-          checksummedMatch: leafHashChecksummed.toLowerCase() === onChainRoot.toLowerCase()
+          test1_standard_lowercase: test1_lowercase,
+          test1_standard_checksummed: test1_checksummed,
+          test2_distIdFirst_lowercase: test2_lowercase,
+          test2_distIdFirst_checksummed: test2_checksummed,
+          test3_distIdLast_lowercase: test3_lowercase,
+          test3_distIdLast_checksummed: test3_checksummed,
+          test4_addrAmount_lowercase: test4_lowercase,
+          test4_addrAmount_checksummed: test4_checksummed,
+          test4b_addrAmount_encoded_lowercase: test4b_lowercase,
+          test4b_addrAmount_encoded_checksummed: test4b_checksummed,
+          test5_addrOnly_lowercase: test5_lowercase,
+          test5_addrOnly_checksummed: test5_checksummed,
+        });
+        
+        console.log('🎯 Match results:', {
+          test1_lowercase: test1_lowercase.toLowerCase() === onChainRoot.toLowerCase(),
+          test1_checksummed: test1_checksummed.toLowerCase() === onChainRoot.toLowerCase(),
+          test2_lowercase: test2_lowercase.toLowerCase() === onChainRoot.toLowerCase(),
+          test2_checksummed: test2_checksummed.toLowerCase() === onChainRoot.toLowerCase(),
+          test3_lowercase: test3_lowercase.toLowerCase() === onChainRoot.toLowerCase(),
+          test3_checksummed: test3_checksummed.toLowerCase() === onChainRoot.toLowerCase(),
+          test4_lowercase: test4_lowercase.toLowerCase() === onChainRoot.toLowerCase(),
+          test4_checksummed: test4_checksummed.toLowerCase() === onChainRoot.toLowerCase(),
+          test4b_lowercase: test4b_lowercase.toLowerCase() === onChainRoot.toLowerCase(),
+          test4b_checksummed: test4b_checksummed.toLowerCase() === onChainRoot.toLowerCase(),
+          test5_lowercase: test5_lowercase.toLowerCase() === onChainRoot.toLowerCase(),
+          test5_checksummed: test5_checksummed.toLowerCase() === onChainRoot.toLowerCase(),
         });
         
         // Use whichever format matches the on-chain root
-        if (leafHashChecksummed.toLowerCase() === onChainRoot.toLowerCase()) {
+        if (test1_checksummed.toLowerCase() === onChainRoot.toLowerCase()) {
           accountForClaim = checksummedAccount;
-          console.log('✅ Using CHECKSUMMED address format');
-        } else if (leafHashLowercase.toLowerCase() === onChainRoot.toLowerCase()) {
+          console.log('✅ MATCH: Standard (index, address, amount) with CHECKSUMMED');
+        } else if (test1_lowercase.toLowerCase() === onChainRoot.toLowerCase()) {
           accountForClaim = lowercaseAccount;
-          console.log('✅ Using LOWERCASE address format');
+          console.log('✅ MATCH: Standard (index, address, amount) with LOWERCASE');
+        } else if (test2_checksummed.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = checksummedAccount;
+          console.log('✅ MATCH: DistId First (distId, index, address, amount) with CHECKSUMMED');
+        } else if (test2_lowercase.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = lowercaseAccount;
+          console.log('✅ MATCH: DistId First (distId, index, address, amount) with LOWERCASE');
+        } else if (test3_checksummed.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = checksummedAccount;
+          console.log('✅ MATCH: DistId Last (index, address, amount, distId) with CHECKSUMMED');
+        } else if (test3_lowercase.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = lowercaseAccount;
+          console.log('✅ MATCH: DistId Last (index, address, amount, distId) with LOWERCASE');
+        } else if (test4_checksummed.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = checksummedAccount;
+          console.log('✅ MATCH: Simple (address, amount) with CHECKSUMMED');
+        } else if (test4_lowercase.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = lowercaseAccount;
+          console.log('✅ MATCH: Simple (address, amount) with LOWERCASE');
+        } else if (test4b_checksummed.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = checksummedAccount;
+          console.log('✅ MATCH: Simple ABI.encode (address, amount) with CHECKSUMMED');
+        } else if (test4b_lowercase.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = lowercaseAccount;
+          console.log('✅ MATCH: Simple ABI.encode (address, amount) with LOWERCASE');
+        } else if (test5_checksummed.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = checksummedAccount;
+          console.log('✅ MATCH: Address Only with CHECKSUMMED');
+        } else if (test5_lowercase.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = lowercaseAccount;
+          console.log('✅ MATCH: Address Only with LOWERCASE');
         } else {
-          console.warn('⚠️ Neither format matches! Using lowercase by default');
+          console.error('❌ NO MATCH FOUND!');
+          console.error('Backend merkle tree uses unknown structure');
+          console.error('Check: https://github.com/btc1usd/v2BTC1/tree/main for merkle generation code');
+          console.error('Expected root:', onChainRoot);
+          console.error('Data: distId=' + distributionId + ', index=' + index + ', account=' + account + ', amount=' + amount);
+          console.error('Amount as BigInt:', amountWei.toString());
+          console.error('🔍 Possible issues:');
+          console.error('  1. Backend merkle tree was generated with DIFFERENT data than Supabase has now');
+          console.error('  2. Amount precision mismatch (backend used different decimals)');
+          console.error('  3. Index mismatch (backend used different ordering)');
+          console.error('  4. Merkle tree uses sortLeaves option that changes leaf order');
         }
       }
     } catch (e: any) {
       console.warn('Could not auto-detect address format:', e.message);
-      console.log('Using lowercase address format by default');
+      console.log('🛠️ Using checksummed address format by default (safer)');
+      accountForClaim = checksummedAccount;
     }
 
     console.log("🎁 Claiming rewards...", {
@@ -313,33 +465,6 @@ export async function claimRewards(
       proofSample: proof.slice(0, 2), // First 2 proof elements for debugging
       isSingleLeaf: proof.length === 0 // Empty proof = single entry in tree
     });
-    
-    // For debugging: Calculate leaf hash to verify
-    const leafHash = ethers.solidityPackedKeccak256(
-      ["uint256", "address", "uint256"],
-      [index, accountForClaim, amountWei]
-    );
-    console.log("🍃 Leaf hash (index, account, amount):", leafHash);
-    
-    // Get merkle root from contract for this distribution
-    try {
-      // First check if contract exists
-      const provider = distributorContract.runner?.provider || signer.provider;
-      if (provider) {
-        const code = await provider.getCode(CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR);
-        if (code === '0x') {
-          console.error('MerkleDistributor contract not found at:', CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR);
-        } else {
-          const distInfo = await distributorContract.distributions(distributionId);
-          const onChainRoot = distInfo.merkleRoot || distInfo[0];
-          console.log("🌳 On-chain merkle root:", onChainRoot);
-          console.log("✅ Match:", leafHash.toLowerCase() === onChainRoot.toLowerCase());
-        }
-      }
-    } catch (e: any) {
-      console.warn("Could not fetch distribution info:", e.message);
-      console.warn("Proceeding with claim anyway - contract will validate");
-    }
     
     // Call claim with exact parameters: claim(distributionId, index, account, amount, proof)
     const tx = await distributorContract.claim(
