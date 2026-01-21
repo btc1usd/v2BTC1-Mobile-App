@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, ScrollView, Image } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet } from "react-native";
 import { ScreenContainer } from "./screen-container";
 import { ConnectButton } from "thirdweb/react";
 import { 
@@ -12,6 +12,7 @@ import { DEFAULT_CHAIN_ID } from "@/lib/network-manager";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useThemeContext } from "@/lib/theme-provider";
+import { LinearGradient } from "expo-linear-gradient";
 
 export function LandingScreen() {
   const router = useRouter();
@@ -57,8 +58,8 @@ export function LandingScreen() {
   };
 
   const handleConnected = () => {
-    // Connection successful, navigate to mint screen
-    router.replace("/(tabs)/mint");
+    // Connection successful, navigate to dashboard
+    router.replace("/(tabs)");
   };
 
   const features = [
@@ -69,7 +70,7 @@ export function LandingScreen() {
     },
     {
       icon: "🛡️",
-      title: "Secure & Audited",
+      title: "Secure",
       description: "Enterprise-grade security with regular third-party audits"
     },
     {
@@ -85,60 +86,241 @@ export function LandingScreen() {
   ];
 
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" edges={["top", "left", "right"]}>
       <ScrollView 
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="flex-1 px-6 py-12">
-          {/* Theme Toggle - Always visible */}
-          <View className="absolute top-4 right-6 z-10">
+        <View className="flex-1 px-6 py-8">
+          {/* Theme Toggle - Elegant design */}
+          <View className="absolute top-2 right-4 z-10">
             <TouchableOpacity
               onPress={handleToggleTheme}
-              className="bg-surface w-10 h-10 rounded-full border border-border items-center justify-center shadow-sm"
+              className="w-12 h-12 rounded-2xl items-center justify-center"
+              style={{
+                backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                borderWidth: 1,
+                borderColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)',
+              }}
               activeOpacity={0.7}
             >
-              <Text className="text-lg">{colorScheme === "dark" ? "🌙" : "☀️"}</Text>
+              <Text className="text-2xl">{colorScheme === "dark" ? "🌙" : "☀️"}</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Logo and Header */}
-          <View className="items-center mb-12">
-            <View className="bg-gradient-to-br from-primary/20 to-primary/10 p-8 rounded-full mb-6 shadow-lg">
-              <Image
-                source={require("@/assets/images/icon.png")}
-                style={{ width: 100, height: 100 }}
-                resizeMode="contain"
+          {/* Hero Section with Premium Logo */}
+          <View className="items-center mt-12 mb-10">
+            {/* Animated Glow Effect Background */}
+            <View style={{
+              position: 'relative',
+              marginBottom: 24,
+            }}>
+              {/* Outer Glow */}
+              <View style={{
+                position: 'absolute',
+                width: 200,
+                height: 200,
+                borderRadius: 100,
+                backgroundColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.12)',
+                top: -20,
+                left: -20,
+              }} />
+              
+              {/* Logo Container with Gradient */}
+              <View style={{
+                width: 160,
+                height: 160,
+                borderRadius: 80,
+                backgroundColor: colorScheme === 'dark' ? 'rgba(30, 30, 30, 0.8)' : 'rgba(255, 255, 255, 0.9)',
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderWidth: 3,
+                borderColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.2)',
+                shadowColor: '#3b82f6',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.3,
+                shadowRadius: 20,
+                elevation: 12,
+              }}>
+                <Image
+                  source={require("@/assets/images/icon.png")}
+                  style={{ width: 120, height: 120 }}
+                  resizeMode="contain"
+                />
+              </View>
+            </View>
+            
+            {/* Brand Title with Gradient Effect */}
+            <View className="items-center mb-4">
+              <Text 
+                className="text-6xl font-black text-center mb-2" 
+                style={{ 
+                  color: colorScheme === 'dark' ? '#ffffff' : '#000000',
+                  letterSpacing: 2,
+                  textShadowColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.2)',
+                  textShadowOffset: { width: 0, height: 2 },
+                  textShadowRadius: 8,
+                }}
+              >
+                BTC1
+              </Text>
+              
+              {/* Subtitle Badge */}
+              <View style={{
+                backgroundColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.1)',
+                paddingHorizontal: 20,
+                paddingVertical: 8,
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.2)',
+                marginBottom: 16,
+              }}>
+                <Text 
+                  className="text-base font-bold text-center" 
+                  style={{ color: colorScheme === 'dark' ? '#60a5fa' : '#2563eb' }}
+                >
+                  Bitcoin-Backed Coin
+                </Text>
+              </View>
+              
+              {/* Beautiful Tagline */}
+              <View className="px-4 mb-4">
+                <Text 
+                  className="text-lg font-bold text-center leading-7" 
+                  style={{ 
+                    color: colorScheme === 'dark' ? '#e2e8f0' : '#1e293b',
+                    lineHeight: 28,
+                  }}
+                >
+                  New Digital Money Backed by Bitcoin
+                </Text>
+                <Text 
+                  className="text-base font-semibold text-center leading-6 mt-2" 
+                  style={{ 
+                    color: colorScheme === 'dark' ? '#94a3b8' : '#64748b',
+                  }}
+                >
+                  Stable Like Dollar • Sharing Rewards • Giving Back
+                </Text>
+              </View>
+            </View>
+            
+            {/* Description with Icon */}
+            <View className="flex-row items-center justify-center px-6 mb-2">
+              <Text className="text-2xl mr-2">✨</Text>
+              <Text 
+                className="text-base font-semibold text-center" 
+                style={{ color: colorScheme === 'dark' ? '#94a3b8' : '#64748b' }}
+              >
+                Shariah Compliant • Profit Sharing • Charity
+              </Text>
+            </View>
+            
+            {/* Trust Indicators */}
+            <View className="flex-row items-center justify-center gap-3 mt-3">
+              <View className="flex-row items-center">
+                <Text className="text-base mr-1">🔒</Text>
+                <Text style={{ color: colorScheme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 13, fontWeight: '600' }}>Secure</Text>
+              </View>
+              <Text style={{ color: colorScheme === 'dark' ? '#475569' : '#cbd5e1' }}>•</Text>
+              
+              <Text style={{ color: colorScheme === 'dark' ? '#475569' : '#cbd5e1' }}>•</Text>
+              <View className="flex-row items-center">
+                <Text className="text-base mr-1">⚡</Text>
+                <Text style={{ color: colorScheme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 13, fontWeight: '600' }}>Fast</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Premium CTA Button */}
+          <View className="px-2 mb-16">
+            <View style={{
+              borderRadius: 28,
+              overflow: 'hidden',
+              shadowColor: '#3b82f6',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.4,
+              shadowRadius: 16,
+              elevation: 12,
+            }}>
+              <ConnectButton
+                client={client}
+                wallets={wallets}
+                chain={chain}
+                onConnect={handleConnected}
+                connectButton={{
+                  label: "🚀 Get Started Now",
+                  style: {
+                    width: "100%",
+                    height: 68,
+                    borderRadius: 28,
+                    fontSize: 20,
+                    fontWeight: "900",
+                    backgroundColor: colorScheme === 'dark' ? '#3b82f6' : '#2563eb',
+                    color: "white",
+                    border: 'none',
+                    letterSpacing: 0.5,
+                  }
+                }}
+                theme={colorScheme === 'dark' ? 'dark' : 'light'}
+                locale="en_US"
               />
             </View>
             
-            <Text className="text-5xl font-bold text-center mb-3" style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000' }}>
-              BTC1
-            </Text>
-            <Text className="text-xl text-center font-semibold mb-2" style={{ color: colorScheme === 'dark' ? '#ffffff' : '#000000' }}>
-              Bitcoin-Backed Coin
-            </Text>
-            <Text className="text-base text-muted text-center px-4">
-              With built-in Profit Sharing & Charity
+            {/* Subtext */}
+            <Text 
+              className="text-center mt-3 text-xs font-semibold" 
+              style={{ color: colorScheme === 'dark' ? '#64748b' : '#94a3b8' }}
+            >
+              Connect wallet to start earning rewards
             </Text>
           </View>
 
-          {/* Features Grid */}
-          <View className="gap-4 mb-12">
+          {/* Premium Feature Cards */}
+          <View className="gap-5 mb-8">
             {features.map((feature, index) => (
               <View 
                 key={index}
-                className="bg-surface p-6 rounded-3xl border-2 border-border shadow-sm"
+                style={{
+                  backgroundColor: colorScheme === 'dark' ? 'rgba(30, 41, 59, 0.5)' : 'rgba(248, 250, 252, 0.8)',
+                  borderRadius: 24,
+                  borderWidth: 1.5,
+                  borderColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(226, 232, 240, 0.8)',
+                  padding: 20,
+                  shadowColor: colorScheme === 'dark' ? '#000' : '#64748b',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 12,
+                  elevation: 3,
+                }}
               >
-                <View className="flex-row items-start">
-                  <View className="bg-primary/10 p-3 rounded-2xl mr-4">
-                    <Text className="text-4xl">{feature.icon}</Text>
+                <View className="flex-row items-center">
+                  {/* Icon with Gradient Background */}
+                  <View style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 16,
+                    backgroundColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    marginRight: 16,
+                    borderWidth: 1,
+                    borderColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)',
+                  }}>
+                    <Text className="text-3xl">{feature.icon}</Text>
                   </View>
+                  
                   <View className="flex-1">
-                    <Text className="text-xl font-bold text-foreground mb-2">
+                    <Text 
+                      className="text-lg font-bold mb-1" 
+                      style={{ color: colorScheme === 'dark' ? '#f1f5f9' : '#0f172a' }}
+                    >
                       {feature.title}
                     </Text>
-                    <Text className="text-sm text-muted leading-6">
+                    <Text 
+                      className="text-sm leading-5" 
+                      style={{ color: colorScheme === 'dark' ? '#94a3b8' : '#64748b' }}
+                    >
                       {feature.description}
                     </Text>
                   </View>
@@ -147,49 +329,52 @@ export function LandingScreen() {
             ))}
           </View>
 
-          {/* Connect Wallet Button - Now triggers ConnectButton modal */}
-          <View className="mt-auto pt-8">
-            <View className="items-center justify-center p-4">
-              <ConnectButton
-                client={client}
-                wallets={wallets}
-                chain={chain}
-                onConnect={handleConnected}
-                connectButton={{
-                  label: "Get Started",
-                  style: {
-                    width: "100%",
-                    height: 60,
-                    borderRadius: 28,
-                    fontSize: 18,
-                    fontWeight: "bold",
-                    backgroundColor: "#3b82f6", // primary color
-                    color: "white",
-                  }
-                }}
-                theme="dark"
-                locale="en_US"
-              />
-            </View>
-
-            <TouchableOpacity 
-              onPress={() => {}}
-              className="mt-4 py-3 items-center"
-            >
-              <Text className="text-primary text-base font-semibold">
-                Learn More
+          {/* Premium Footer */}
+          <View className="mt-6 items-center pb-4">
+            <View className="flex-row items-center mb-3">
+              <View style={{
+                width: 40,
+                height: 1,
+                backgroundColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(203, 213, 225, 0.5)',
+              }} />
+              <Text 
+                className="text-xs font-bold mx-3" 
+                style={{ color: colorScheme === 'dark' ? '#64748b' : '#94a3b8' }}
+              >
+                POWERED BY
               </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Footer */}
-          <View className="mt-8 items-center">
-            <Text className="text-sm text-muted text-center">
-              Powered by Base • Secured by Bitcoin
+              <View style={{
+                width: 40,
+                height: 1,
+                backgroundColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(203, 213, 225, 0.5)',
+              }} />
+            </View>
+            
+            <View className="flex-row items-center gap-2">
+              <Text 
+                className="text-sm font-bold" 
+                style={{ color: colorScheme === 'dark' ? '#60a5fa' : '#3b82f6' }}
+              >
+                Base Network
+              </Text>
+              <Text style={{ color: colorScheme === 'dark' ? '#475569' : '#cbd5e1' }}>•</Text>
+              <Text 
+                className="text-sm font-bold" 
+                style={{ color: colorScheme === 'dark' ? '#f59e0b' : '#f97316' }}
+              >
+                Bitcoin
+              </Text>
+            </View>
+            
+            <Text 
+              className="text-xs mt-2" 
+              style={{ color: colorScheme === 'dark' ? '#475569' : '#cbd5e1' }}
+            >
+              Secured 
             </Text>
           </View>
         </View>
       </ScrollView>
     </ScreenContainer>
   );
-}
+}   

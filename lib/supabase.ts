@@ -448,8 +448,8 @@ export async function hasUnclaimedRewards(address: string): Promise<boolean> {
 }
 
 /**
- * Fetch total rewards earned by user (sum of all claimed amounts)
- * Parses claims from distribution JSONB
+ * Fetch total rewards earned by user (sum of all CLAIMED amounts only)
+ * Parses claims from distribution JSONB and only counts claimed rewards
  */
 export async function fetchTotalRewardsEarned(address: string): Promise<string> {
   try {
@@ -463,17 +463,19 @@ export async function fetchTotalRewardsEarned(address: string): Promise<string> 
     const userAddress = address.toLowerCase();
     let total = BigInt(0);
 
-    // Sum all user claims across distributions
+    // Sum only CLAIMED user rewards across distributions
     for (const dist of data || []) {
       if (dist.claims) {
         const userClaim = dist.claims[userAddress];
         
-        if (userClaim && userClaim.amount) {
+        // Only count if the claim has been marked as claimed
+        if (userClaim && userClaim.amount && userClaim.claimed === true) {
           total += BigInt(userClaim.amount);
         }
       }
     }
 
+    console.log('[fetchTotalRewardsEarned] Total claimed rewards:', total.toString());
     return total.toString();
   } catch (error: any) {
     console.error('Error fetching total rewards:', error.message || error);

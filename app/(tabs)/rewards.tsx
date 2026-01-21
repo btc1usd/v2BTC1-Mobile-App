@@ -339,7 +339,7 @@ export default function RewardsScreen() {
           <Text className="text-sm font-semibold text-foreground mb-4">Distribution Stats</Text>
           
           <View className="flex-row justify-between mb-3">
-            <Text className="text-sm text-muted">Total Earned</Text>
+            <Text className="text-sm text-muted">Total Claimed</Text>
             <Text className="text-lg font-bold text-success">{parseFloat(totalEarned).toFixed(4)} BTC1</Text>
           </View>
           
