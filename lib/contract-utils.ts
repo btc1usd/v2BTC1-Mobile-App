@@ -232,20 +232,123 @@ export async function claimRewards(
   distributionId: number,
   index: number,
   account: string,
-  amount: string,
+  amount: string, // Amount in smallest unit (Wei-equivalent, 8 decimals)
   proof: string[],
   signer: ethers.Signer
 ): Promise<TransactionResult> {
   try {
-    const amountWei = ethers.parseUnits(amount, 8);
+    // CRITICAL: The merkle tree can be generated with either lowercase or checksummed addresses
+    // We need to try BOTH formats to see which one matches the on-chain merkle root
+    const lowercaseAccount = account.toLowerCase();
+    const checksummedAccount = ethers.getAddress(account);
+    
+    console.log('[claimRewards] Address formats:', {
+      original: account,
+      lowercase: lowercaseAccount,
+      checksummed: checksummedAccount,
+      areEqual: lowercaseAccount === checksummedAccount
+    });
+    
+    // Amount is already in smallest unit from Supabase, just convert to BigInt
+    const amountWei = BigInt(amount);
     const distributorContract = new ethers.Contract(
       CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR,
       ABIS.MERKLE_DISTRIBUTOR,
       signer
     );
 
-    console.log("🎁 Claiming rewards...");
-    const tx = await distributorContract.claim(distributionId, index, account, amountWei, proof);
+    // Try to determine which address format was used to generate the merkle tree
+    let accountForClaim = lowercaseAccount; // Default to lowercase (most common)
+    
+    // Try to fetch on-chain merkle root and test both formats
+    try {
+      const provider = distributorContract.runner?.provider || signer.provider;
+      if (provider) {
+        const distInfo = await distributorContract.distributions(distributionId);
+        const onChainRoot = distInfo.merkleRoot || distInfo[0];
+        
+        // Calculate leaf hash with lowercase
+        const leafHashLowercase = ethers.solidityPackedKeccak256(
+          ["uint256", "address", "uint256"],
+          [index, lowercaseAccount, amountWei]
+        );
+        
+        // Calculate leaf hash with checksummed
+        const leafHashChecksummed = ethers.solidityPackedKeccak256(
+          ["uint256", "address", "uint256"],
+          [index, checksummedAccount, amountWei]
+        );
+        
+        console.log('🔍 Testing address formats:', {
+          onChainRoot,
+          leafHashLowercase,
+          leafHashChecksummed,
+          lowercaseMatch: leafHashLowercase.toLowerCase() === onChainRoot.toLowerCase(),
+          checksummedMatch: leafHashChecksummed.toLowerCase() === onChainRoot.toLowerCase()
+        });
+        
+        // Use whichever format matches the on-chain root
+        if (leafHashChecksummed.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = checksummedAccount;
+          console.log('✅ Using CHECKSUMMED address format');
+        } else if (leafHashLowercase.toLowerCase() === onChainRoot.toLowerCase()) {
+          accountForClaim = lowercaseAccount;
+          console.log('✅ Using LOWERCASE address format');
+        } else {
+          console.warn('⚠️ Neither format matches! Using lowercase by default');
+        }
+      }
+    } catch (e: any) {
+      console.warn('Could not auto-detect address format:', e.message);
+      console.log('Using lowercase address format by default');
+    }
+
+    console.log("🎁 Claiming rewards...", {
+      distributionId,
+      index,
+      account: accountForClaim,
+      originalAccount: account,
+      amount: amountWei.toString(),
+      proofLength: proof.length,
+      proofSample: proof.slice(0, 2), // First 2 proof elements for debugging
+      isSingleLeaf: proof.length === 0 // Empty proof = single entry in tree
+    });
+    
+    // For debugging: Calculate leaf hash to verify
+    const leafHash = ethers.solidityPackedKeccak256(
+      ["uint256", "address", "uint256"],
+      [index, accountForClaim, amountWei]
+    );
+    console.log("🍃 Leaf hash (index, account, amount):", leafHash);
+    
+    // Get merkle root from contract for this distribution
+    try {
+      // First check if contract exists
+      const provider = distributorContract.runner?.provider || signer.provider;
+      if (provider) {
+        const code = await provider.getCode(CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR);
+        if (code === '0x') {
+          console.error('MerkleDistributor contract not found at:', CONTRACT_ADDRESSES.MERKLE_DISTRIBUTOR);
+        } else {
+          const distInfo = await distributorContract.distributions(distributionId);
+          const onChainRoot = distInfo.merkleRoot || distInfo[0];
+          console.log("🌳 On-chain merkle root:", onChainRoot);
+          console.log("✅ Match:", leafHash.toLowerCase() === onChainRoot.toLowerCase());
+        }
+      }
+    } catch (e: any) {
+      console.warn("Could not fetch distribution info:", e.message);
+      console.warn("Proceeding with claim anyway - contract will validate");
+    }
+    
+    // Call claim with exact parameters: claim(distributionId, index, account, amount, proof)
+    const tx = await distributorContract.claim(
+      distributionId,     // uint256 distributionId
+      index,              // uint256 index
+      accountForClaim,    // address account (use original format from Supabase)
+      amountWei,         // uint256 amount
+      proof              // bytes32[] merkleProof (empty array for single-leaf trees)
+    );
     console.log("Claim tx sent:", tx.hash);
     
     const receipt = await tx.wait();

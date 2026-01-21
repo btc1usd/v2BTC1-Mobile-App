@@ -10,28 +10,40 @@ if (!__DEV__) {
   const originalConsoleWarn = console.warn;
   
   console.error = (...args: any[]) => {
-    const str = JSON.stringify(args);
-    // Suppress WalletConnect internal errors, relay messages, and session topic errors
-    if (
-      str.includes('"level":50') || 
-      str.includes('"level": 50') ||
-      str.includes('session topic') ||
-      str.includes('No matching key') ||
-      str.includes("doesn't exist") ||
-      str.includes('onRelayMessage') ||
-      str.includes('failed to process an inbound message')
-    ) return;
+    try {
+      const str = JSON.stringify(args, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      );
+      // Suppress WalletConnect internal errors, relay messages, and session topic errors
+      if (
+        str.includes('"level":50') || 
+        str.includes('"level": 50') ||
+        str.includes('session topic') ||
+        str.includes('No matching key') ||
+        str.includes("doesn't exist") ||
+        str.includes('onRelayMessage') ||
+        str.includes('failed to process an inbound message')
+      ) return;
+    } catch (e) {
+      // If stringify fails for any reason, allow the log through
+    }
     originalConsoleError(...args);
   };
   
   console.warn = (...args: any[]) => {
-    const str = JSON.stringify(args);
-    // Suppress session warnings and relay warnings
-    if (
-      str.includes('session topic') ||
-      str.includes('No matching key') ||
-      str.includes('onRelayMessage')
-    ) return;
+    try {
+      const str = JSON.stringify(args, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      );
+      // Suppress session warnings and relay warnings
+      if (
+        str.includes('session topic') ||
+        str.includes('No matching key') ||
+        str.includes('onRelayMessage')
+      ) return;
+    } catch (e) {
+      // If stringify fails for any reason, allow the log through
+    }
     originalConsoleWarn(...args);
   };
 } else {
@@ -39,12 +51,18 @@ if (!__DEV__) {
   const originalConsoleError = console.error;
   
   console.error = (...args: any[]) => {
-    const str = JSON.stringify(args);
-    // Only suppress the noisy relay message errors in dev too
-    if (
-      str.includes('onRelayMessage') ||
-      str.includes('failed to process an inbound message')
-    ) return;
+    try {
+      const str = JSON.stringify(args, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      );
+      // Only suppress the noisy relay message errors in dev too
+      if (
+        str.includes('onRelayMessage') ||
+        str.includes('failed to process an inbound message')
+      ) return;
+    } catch (e) {
+      // If stringify fails for any reason, allow the log through
+    }
     originalConsoleError(...args);
   };
 }
@@ -67,7 +85,7 @@ import {
 } from "thirdweb/react";
 import { client } from "./thirdweb";
 import { ethers6Adapter } from "thirdweb/adapters/ethers6";
-import { DEFAULT_CHAIN_ID, DEFAULT_NETWORK } from "./network-manager";
+import { DEFAULT_CHAIN_ID, DEFAULT_NETWORK, SUPPORTED_NETWORKS } from "./network-manager";
 import { defineChain } from "thirdweb";
 
 /* ============================================================
@@ -100,8 +118,28 @@ export const useWeb3 = () => {
 
 export function Web3Provider({ children }: { children: ReactNode }) {
   // 1. READ / WRITE separation (CRITICAL)
-  // READ: direct RPC (JsonRpcProvider)
-  const readProvider = useMemo(() => new ethers.JsonRpcProvider(DEFAULT_NETWORK.rpcUrls[0], DEFAULT_CHAIN_ID), []);
+  // READ: direct RPC (JsonRpcProvider) with fallback support
+  const [rpcIndex, setRpcIndex] = useState(0);
+  const rpcUrls = DEFAULT_NETWORK.rpcUrls;
+  
+  const readProvider = useMemo(() => {
+    const currentRpc = rpcUrls[rpcIndex];
+    console.log(`🔌 Using RPC [${rpcIndex}]: ${currentRpc}`);
+    
+    const provider = new ethers.JsonRpcProvider(currentRpc, DEFAULT_CHAIN_ID);
+    
+    // Add error handler to switch to next RPC on persistent failures
+    provider.on('error', (error) => {
+      console.error(`❌ RPC error on ${currentRpc}:`, error.message);
+      // Switch to next RPC if available
+      if (rpcIndex < rpcUrls.length - 1) {
+        console.log(`🔄 Switching to fallback RPC [${rpcIndex + 1}]`);
+        setRpcIndex(prev => prev + 1);
+      }
+    });
+    
+    return provider;
+  }, [rpcIndex]);
 
   // 2. Thirdweb v5 Hooks
   const account = useActiveAccount();

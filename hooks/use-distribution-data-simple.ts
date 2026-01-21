@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
 import { fetchCurrentDistribution } from "@/lib/supabase";
+import { getResilientProvider } from "@/lib/rpc-provider-resilient";
 
 export function useDistributionData() {
   const { readProvider, chainId } = useWeb3();
@@ -29,34 +30,31 @@ export function useDistributionData() {
   };
 
   const fetchDistributionData = async () => {
-    // CRITICAL: Use readProvider for all reads - NEVER WalletConnect
-    if (!readProvider) return;
+    if (!chainId) {
+      console.log('useDistributionData - No chainId available');
+      return;
+    }
 
     try {
       setIsLoading(true);
       
-      // OPTIMIZED: Direct contract call - no network check needed (RPC is always on correct network)
+      // Use resilient RPC provider with automatic retry and failover
+      const resilientRPC = getResilientProvider(chainId);
+      
       const contract = new ethers.Contract(
         CONTRACT_ADDRESSES.WEEKLY_DISTRIBUTION,
-        ABIS.WEEKLY_DISTRIBUTION,
-        readProvider
+        ABIS.WEEKLY_DISTRIBUTION
       );
 
-      // Check if contract exists
-      const code = await readProvider.getCode(CONTRACT_ADDRESSES.WEEKLY_DISTRIBUTION);
-      if (code === '0x') {
-        console.warn(`WeeklyDistribution contract not found at ${CONTRACT_ADDRESSES.WEEKLY_DISTRIBUTION}`);
-        return;
-      }
-
-      const [count, can] = await Promise.all([
-        contract.distributionCount(),
-        contract.canDistribute(),
+      // Batch fetch with resilient provider
+      const [count, can] = await resilientRPC.batchCall([
+        { contract, method: 'distributionCount' },
+        { contract, method: 'canDistribute' },
       ]);
 
-      const countNum = Number(count);
+      const countNum = count ? Number(count) : 0;
       setDistributionCount(countNum);
-      setCanDistribute(can);
+      setCanDistribute(can ?? false);
 
       // Fetch last distribution from Supabase to calculate 7 days
       try {
@@ -73,8 +71,8 @@ export function useDistributionData() {
           setNextDistributionTime(nextTimeTimestamp);
           setTimeUntilDistribution(calculateTimeUntil(nextTimeTimestamp));
           
-          console.log('Distribution data updated:', {
-            countNum,
+          console.log('✅ Distribution data updated:', {
+            count: countNum,
             lastDist: lastDistDate.toISOString(),
             nextDist: nextDistDate.toISOString(),
             canDistribute: can
@@ -89,7 +87,7 @@ export function useDistributionData() {
       }
       
     } catch (error: any) {
-      console.error("Error fetching distribution data:", error.message || error);
+      console.error("❌ Error fetching distribution data:", error.message || error);
       // Keep previous values on error
     } finally {
       setIsLoading(false);
@@ -101,7 +99,7 @@ export function useDistributionData() {
     // OPTIMIZED: Removed 60s polling - distribution data updates on:
     // 1. Component mount or chainId change
     // 2. Manual refresh via pull-to-refresh in parent component
-  }, [readProvider, chainId]);
+  }, [chainId]);
 
   return {
     distributionCount,
@@ -110,5 +108,6 @@ export function useDistributionData() {
     canDistribute,
     isLoading,
     lastDistributionDate,
+    refetch: fetchDistributionData, // Expose refetch function
   };
 }

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { ethers } from "ethers";
 import { ABIS, COLLATERAL_TOKENS } from "@/lib/shared/contracts";
 import { useWeb3 } from "@/lib/web3-walletconnect-v2";
+import { getResilientProvider } from "@/lib/rpc-provider-resilient";
 
 /**
  * DeFi balance fetching hook with retry and caching
@@ -93,30 +94,24 @@ export function useCollateralBalances({
     return { valid: true, readProvider };
   };
 
-  // Fetch single token balance
+  // Fetch single token balance with resilient RPC
   const fetchTokenBalance = async (
     token: typeof COLLATERAL_TOKENS[0],
-    readProvider: ethers.Provider,
-    address: string,
-    retryCount: number = 0
+    chainId: number,
+    address: string
   ): Promise<CollateralBalance> => {
     try {
-      const code = await readProvider.getCode(token.address);
-      
-      if (code === "0x" || code === "0x0") {
-        throw new Error(`Contract not found at ${token.address}`);
-      }
+      const resilientRPC = getResilientProvider(chainId);
+      const tokenContract = new ethers.Contract(token.address, ABIS.ERC20);
 
-      const tokenContract = new ethers.Contract(
-        token.address,
-        ABIS.ERC20,
-        readProvider
-      );
-
-      const [rawBalance, contractDecimals] = await Promise.all([
-        tokenContract.balanceOf(address) as Promise<bigint>,
-        tokenContract.decimals() as Promise<number>,
+      const [rawBalance, contractDecimals] = await resilientRPC.batchCall([
+        { contract: tokenContract, method: 'balanceOf', params: [address] },
+        { contract: tokenContract, method: 'decimals' },
       ]);
+
+      if (!rawBalance || !contractDecimals) {
+        throw new Error('Failed to fetch balance or decimals');
+      }
 
       const formatted = ethers.formatUnits(rawBalance, contractDecimals);
 
@@ -130,12 +125,6 @@ export function useCollateralBalances({
         error: null,
       };
     } catch (err: any) {
-      if (retryCount < RETRY_DELAYS.length) {
-        const delay = RETRY_DELAYS[retryCount];
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return fetchTokenBalance(token, readProvider, address, retryCount + 1);
-      }
-
       const errorMsg = err?.shortMessage || err?.message || "Failed to fetch balance";
 
       if (cacheRef.current[token.symbol]) {
@@ -157,7 +146,7 @@ export function useCollateralBalances({
     }
   };
 
-  // Main fetch function
+  // Main fetch function with resilient RPC
   const fetchBalances = useCallback(async (force: boolean = false) => {
     if (isFetchingRef.current) return;
 
@@ -172,26 +161,15 @@ export function useCollateralBalances({
       return;
     }
 
-    const { readProvider } = validation;
-    if (!readProvider || !userAddress) return;
+    if (!userAddress || !chainId) return;
 
     isFetchingRef.current = true;
     setIsLoading(true);
     setError(null);
 
     try {
-      // Only check network if chainId is provided (skip for RPC fallback)
-      if (chainId) {
-        const network = await readProvider.getNetwork();
-        const currentChainId = Number(network.chainId);
-        
-        if (currentChainId !== chainId) {
-          throw new Error(`Network mismatch: expected ${chainId}, got ${currentChainId}`);
-        }
-      }
-
       const balancePromises = COLLATERAL_TOKENS.map(token =>
-        fetchTokenBalance(token, readProvider, userAddress)
+        fetchTokenBalance(token, chainId, userAddress)
       );
 
       const results = await Promise.all(balancePromises);

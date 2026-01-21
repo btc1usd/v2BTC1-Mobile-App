@@ -178,7 +178,7 @@ export const ABIS = {
   ],
 
   MERKLE_DISTRIBUTOR: [
-    // Updated ABI to match the new contract interface with distributionId parameter
+    // Contract claim function signature: claim(uint256 distributionId, uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof)
     "function claim(uint256 distributionId, uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external",
     "function isClaimed(uint256 distributionId, uint256 index) view returns (bool)",
     "function merkleRoot() view returns (bytes32)",

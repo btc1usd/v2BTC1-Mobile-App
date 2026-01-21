@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Linking,
   AppState,
+  RefreshControl,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { ethers } from "ethers"; // OPTIMIZATION: Top-level import
@@ -46,8 +47,17 @@ export default function RedeemScreen() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false); 
+  const [refreshing, setRefreshing] = useState(false);
   
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Refetch BTC1 balance and vault stats
+    await Promise.all([refetchBalance(), refetchVaultStats()]);
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
@@ -63,9 +73,21 @@ export default function RedeemScreen() {
     isConnected,
   });
 
-  const { collateralRatio, isLoading: isVaultLoading, btcPrice } = useVaultStats();
-  const { balance, formattedBalance } = useBtc1Balance();
+  const { collateralRatio, isLoading: isVaultLoading, btcPrice, refetch: refetchVaultStats } = useVaultStats();
+  const { balance, formattedBalance, isLoading: isBalanceLoading, refetch: refetchBalance } = useBtc1Balance();
   const hasBalance = balance > 0;
+
+  // Debug logging for balance
+  useEffect(() => {
+    console.log('[Redeem] BTC1 Balance:', {
+      balance,
+      formattedBalance,
+      hasBalance,
+      isBalanceLoading,
+      address,
+      chainId
+    });
+  }, [balance, formattedBalance, hasBalance, isBalanceLoading, address, chainId]);
 
   const redeemOutput = useMemo(() => {
     if (!amount || Number(amount) <= 0) {
@@ -264,6 +286,9 @@ export default function RedeemScreen() {
           contentContainerStyle={{ paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         >
           <View className="px-6 pt-2 pb-2">
             <NetworkBanner chainId={chainId} />
@@ -278,11 +303,17 @@ export default function RedeemScreen() {
               <View className="flex-row justify-between items-center mb-4">
                 <Text className="text-xs font-medium text-muted uppercase tracking-wide">You Burn</Text>
                 <View className="flex-row items-center">
-                  <Text className="text-xs text-muted mr-2">Balance: {Number(formattedBalance).toFixed(4)}</Text>
-                  {hasBalance && (
-                    <TouchableOpacity onPress={setMaxAmount} className="bg-primary/10 px-2 py-1 rounded-md">
-                      <Text className="text-xs font-bold text-primary">MAX</Text>
-                    </TouchableOpacity>
+                  {isBalanceLoading ? (
+                    <ActivityIndicator size="small" color="#F7931A" />
+                  ) : (
+                    <>
+                      <Text className="text-xs text-muted mr-2">Balance: {Number(formattedBalance).toFixed(4)}</Text>
+                      {hasBalance && (
+                        <TouchableOpacity onPress={setMaxAmount} className="bg-primary/10 px-2 py-1 rounded-md">
+                          <Text className="text-xs font-bold text-primary">MAX</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
                   )}
                 </View>
               </View>
@@ -423,8 +454,18 @@ export default function RedeemScreen() {
             title="Confirm Redeem"
             description="Review and confirm your redeem transaction"
             actionText="Redeem"
-            amount={amount}
-            token="BTC1"
+            amount={redeemOutput.net}
+            token={selectedToken.symbol}
+            network="Base Sepolia"
+            gasEstimate="~0.001 ETH"
+            transactionDetails={[
+              { label: "BTC1 Amount", value: `${amount} BTC1` },
+              { label: "Network", value: "Base Sepolia" },
+              { label: "Gas Estimate", value: "~0.001 ETH" },
+              { label: "Redeem Type", value: redeemOutput.type === 'stable' ? 'STABLE' : 'STRESS' },
+              { label: "Dev Fee", value: "0.1%" },
+              { label: "Action", value: `Redeem for ${selectedToken.symbol}` }
+            ]}
             onConfirm={confirmRedeem}
             onCancel={cancelRedeem}
             isProcessing={step === "signing"}

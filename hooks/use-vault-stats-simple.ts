@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
+import { getResilientProvider } from "@/lib/rpc-provider-resilient";
 
 export function useVaultStats() {
   const { readProvider, chainId } = useWeb3();
@@ -12,212 +13,117 @@ export function useVaultStats() {
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchStats = async () => {
-    // CRITICAL: ALWAYS use RPC provider for reads - NEVER WalletConnect
-    // This eliminates slow wallet communication for vault stats
-    const providerToUse = readProvider;
-    if (!providerToUse) {
-      console.log('useVaultStats - No RPC provider available');
+    if (!chainId) {
+      console.log('useVaultStats - No chainId available');
       return;
     }
 
     try {
       setIsLoading(true);
       
-      // OPTIMIZED: Direct contract call - no artificial delays for speed
-      // Verify we're on Base Sepolia testnet
-      const network = await providerToUse.getNetwork();
-      console.log('useVaultStats - network chainId:', Number(network.chainId));
-      if (Number(network.chainId) !== 84532) {
-        console.warn(`Wrong network: ${network.chainId}. Expected Base Sepolia (84532)`);
-        return;
-      }
+      // Use resilient RPC provider with automatic retry and failover
+      const resilientRPC = getResilientProvider(chainId);
       
-      const contract = new ethers.Contract(
+      const vaultContract = new ethers.Contract(
         CONTRACT_ADDRESSES.VAULT,
-        ABIS.VAULT,
-        providerToUse
+        ABIS.VAULT
       );
 
-      // Check if contract exists
-      const code = await providerToUse.getCode(CONTRACT_ADDRESSES.VAULT);
-      if (code === '0x') {
-        console.warn(`Vault contract not found at ${CONTRACT_ADDRESSES.VAULT}`);
-        return;
-      }
-
-      // Get BTC1 contract for total supply
       const btc1Contract = new ethers.Contract(
         CONTRACT_ADDRESSES.BTC1USD,
-        ABIS.BTC1USD,
-        providerToUse
+        ABIS.BTC1USD
       );
 
-      // Get BTC price from Chainlink Oracle Upgradeable contract
       const chainlinkOracleContract = new ethers.Contract(
         CONTRACT_ADDRESSES.CHAINLINK_BTC_ORACLE,
-        ABIS.CHAINLINK_BTC_ORACLE,
-        providerToUse
+        ABIS.CHAINLINK_BTC_ORACLE
       );
 
-      // Get price from Chainlink Oracle with safe contract call
-      let btcPriceRaw = BigInt(0);
-      try {
-        // Use the getBTCPrice() function from the upgradeable oracle contract
-        const priceResult = await chainlinkOracleContract.getBTCPrice();
-        
-        console.log('Chainlink Oracle price result:', priceResult.toString());
-        
-        // The price should already be in 8 decimals format from the oracle
-        btcPriceRaw = BigInt(priceResult.toString());
-        
-        console.log('BTC Price (8 decimals):', btcPriceRaw.toString());
-      } catch (priceError: any) {
-        console.error('Error fetching BTC price from Chainlink Oracle:', priceError.message);
-        
-        // Fallback to Chainlink feed if the oracle contract fails
-        console.log('Falling back to Chainlink feed...');
-        
-        const chainlinkFeedContract = new ethers.Contract(
-          CONTRACT_ADDRESSES.CHAINLINK_FEED,
-          ABIS.CHAINLINK_FEED,
-          providerToUse
-        );
-        
-        try {
-          const feedData = await chainlinkFeedContract.latestRoundData();
-          const decimals = await chainlinkFeedContract.decimals();
-          
-          const { answer, updatedAt } = feedData;
-          
-          console.log('Chainlink price feed:', {
-            answer: answer.toString(),
-            decimals: decimals,
-            updatedAt: updatedAt.toString()
-          });
-          
-          // Check if price is stale (older than 1 hour)
-          const currentTime = Math.floor(Date.now() / 1000);
-          if (currentTime - Number(updatedAt) > 3600) {
-            console.warn('Chainlink price is stale, but using anyway for testnet');
-          }
-          
-          // Convert Chainlink price to 8 decimals
-          if (decimals === 8) {
-            btcPriceRaw = BigInt(answer.toString());
-          } else {
-            // Adjust decimals if needed
-            const adjustment = 8 - decimals;
-            if (adjustment > 0) {
-              btcPriceRaw = BigInt(answer.toString()) * BigInt(10 ** adjustment);
-            } else {
-              btcPriceRaw = BigInt(answer.toString()) / BigInt(10 ** Math.abs(adjustment));
-            }
-          }
-          
-          console.log('BTC Price from feed (8 decimals):', btcPriceRaw.toString());
-        } catch (feedError: any) {
-          console.error('Error fetching BTC price from Chainlink feed:', feedError.message);
-          // Use fallback price for testnet: $98,000
-          btcPriceRaw = BigInt(9800000000000); // 98000 * 1e8
-          console.log('Using fallback BTC price:', btcPriceRaw.toString());
-        }
-      }
-
-      const [totalSupply, totalCollateralAmountRaw, collateralRatioRaw, healthy] = await Promise.all([
-        btc1Contract.totalSupply().catch(() => BigInt(0)),
-        contract.getTotalCollateralAmount().catch(() => BigInt(0)),
-        contract.getCurrentCollateralRatio().catch(() => {
-          console.warn('Contract getCurrentCollateralRatio() failed, using manual calculation');
-          return BigInt(0);
-        }), // Get CR directly from contract
-        contract.isHealthy().catch(() => false),
+      // Batch fetch all data in parallel with resilient provider
+      console.log('🔍 Fetching vault stats from contracts...');
+      const [totalSupply, totalCollateralAmountRaw, collateralRatioRaw, healthy, btcPriceRaw] = await resilientRPC.batchCall([
+        { contract: btc1Contract, method: 'totalSupply' },
+        { contract: vaultContract, method: 'getTotalCollateralAmount' },
+        { contract: vaultContract, method: 'getCurrentCollateralRatio' },
+        { contract: vaultContract, method: 'isHealthy' },
+        { contract: chainlinkOracleContract, method: 'getBTCPrice' },
       ]);
 
-      const totalSupplyValue = BigInt(totalSupply.toString());
-      const totalCollateralAmount = BigInt(totalCollateralAmountRaw.toString());
-      const btcPrice = BigInt(btcPriceRaw.toString());
-      const collateralRatioFromContract = BigInt(collateralRatioRaw.toString());
+      // Handle null responses from failed calls
+      const totalSupplyValue = totalSupply ? BigInt(totalSupply.toString()) : BigInt(0);
+      const totalCollateralAmount = totalCollateralAmountRaw ? BigInt(totalCollateralAmountRaw.toString()) : BigInt(0);
+      const collateralRatioFromContract = collateralRatioRaw ? BigInt(collateralRatioRaw.toString()) : BigInt(0);
+      const isHealthyValue = healthy ?? false;
+      
+      // BTC Price with fallback
+      let btcPrice = BigInt(0);
+      if (btcPriceRaw) {
+        btcPrice = BigInt(btcPriceRaw.toString());
+      } else {
+        // Fallback: $98,000 for testnet
+        btcPrice = BigInt(9800000000000); // 98000 * 1e8
+        console.log('🔶 Using fallback BTC price:', btcPrice.toString());
+      }
 
-      console.log('Raw values from contracts:', {
+      console.log('📊 Raw Vault Data:', {
         totalSupply: totalSupplyValue.toString(),
-        totalCollateralAmount: totalCollateralAmount.toString(),
+        totalCollateral: totalCollateralAmount.toString(),
         btcPrice: btcPrice.toString(),
-        collateralRatioRaw: collateralRatioFromContract.toString()
+        collateralRatioFromContract: collateralRatioFromContract.toString(),
+        healthy: isHealthyValue
       });
       
-      // Debug: Check if any of the values are zero
-      if (totalSupplyValue === 0n) {
-        console.log('DEBUG: Total supply is 0, setting default CR');
-      }
-      if (totalCollateralAmount === 0n) {
-        console.log('DEBUG: Total collateral amount is 0');
-      }
-      if (btcPrice === 0n) {
-        console.log('DEBUG: BTC price is 0');
-      }
-      if (collateralRatioFromContract === 0n) {
-        console.log('DEBUG: Contract returned 0 for collateral ratio, will calculate manually');
-      }
-
       // Calculate Total Collateral Value: collateralAmount (8 decimals) * btcPrice (8 decimals)
-      // Both are 8 decimals, so multiply and divide by 1e8 to get USD value in 8 decimals
       const DECIMALS_8_BIG = BigInt(100000000);
       let totalCollateralValueUSD = BigInt(0);
       if (totalCollateralAmount > BigInt(0) && btcPrice > BigInt(0)) {
-        // (amount * price) / 1e8 = USD value in 8 decimals
         totalCollateralValueUSD = (totalCollateralAmount * btcPrice) / DECIMALS_8_BIG;
       }
 
-      // Use collateral ratio from contract (it returns ratio with 8 decimals precision)
-      // Contract returns: (totalCollateralUSD * 1e8) / totalSupply
-      // So the value is already a ratio with 8 decimal places
-      // To convert to percentage: (ratio / 1e8) * 100
+      // Calculate collateral ratio with detailed logging
       let formattedRatio;
       if (collateralRatioFromContract > BigInt(0)) {
-        // Contract returns ratio in 8 decimals format
-        // Example: 120% = 1.2 * 1e8 = 120000000
-        // Convert safely using string division to avoid Number overflow
+        // Contract returned valid ratio
         const ratioAsDecimal = Number(collateralRatioFromContract) / 100000000;
         formattedRatio = (ratioAsDecimal * 100).toFixed(2);
-        console.log('Using contract CR:', formattedRatio + '%', 'from raw:', collateralRatioFromContract.toString());
+        console.log('✅ Using contract CR:', formattedRatio + '%', '(raw:', collateralRatioFromContract.toString() + ')');
       } else if (totalSupplyValue === 0n) {
-        console.log('No tokens minted yet, using minimum CR: 110%');
+        // No tokens minted yet, use minimum
         formattedRatio = "110.00";
-      } else {
-        // Fallback: calculate manually if contract call failed
-        // Manual calculation: (totalCollateralValueUSD * 1e8) / totalSupplyValue
+        console.log('📌 No supply yet, using minimum CR: 110%');
+      } else if (totalCollateralValueUSD > BigInt(0)) {
+        // Calculate manually from collateral value
         const ratio = (totalCollateralValueUSD * DECIMALS_8_BIG) / totalSupplyValue;
         const ratioAsDecimal = Number(ratio) / 100000000;
         formattedRatio = (ratioAsDecimal * 100).toFixed(2);
-        console.log('Using manual CR calculation:', formattedRatio + '%', 'raw ratio:', ratio.toString());
+        console.log('🧮 Calculated CR manually:', formattedRatio + '%', '(ratio:', ratio.toString() + ')');
+      } else {
+        // Fallback to minimum if all else fails
+        formattedRatio = "110.00";
+        console.log('⚠️ Unable to calculate CR, using minimum: 110%');
       }
       
-      // Format values for display (all are 8 decimals)
+      // Format values for display
       const formattedValue = parseFloat(ethers.formatUnits(totalCollateralValueUSD.toString(), 8));
       const formattedBtcPrice = btcPrice > BigInt(0) ? parseFloat(ethers.formatUnits(btcPrice.toString(), 8)) : 0;
-      const formattedCollateralAmount = parseFloat(ethers.formatUnits(totalCollateralAmount.toString(), 8));
 
       setCollateralRatio(formattedRatio);
       setTotalCollateralValue(formattedValue);
       setBtcPrice(formattedBtcPrice);
-      setIsHealthy(healthy);
+      setIsHealthy(isHealthyValue);
       
-      console.log('useVaultStats - Vault stats updated:', { 
-        formattedRatio, 
-        formattedValue, 
-        formattedBtcPrice, 
-        formattedCollateralAmount,
-        healthy,
-        collateralRatioFromContract: collateralRatioFromContract.toString()
+      console.log('✅ Vault stats updated:', { 
+        collateralRatio: formattedRatio + '%', 
+        tvl: '$' + formattedValue.toLocaleString(), 
+        btcPrice: '$' + formattedBtcPrice.toLocaleString(), 
+        healthy: isHealthyValue ? '✅' : '⚠️'
       });
     } catch (error: any) {
-      // Ignore network change errors - they're expected during network switches
       if (error?.code === 'NETWORK_ERROR' && error?.message?.includes('network changed')) {
         console.log('Network is changing, will retry vault stats on next fetch cycle');
         return;
       }
-      console.error("Error fetching vault stats:", error.message || error);
-      // Keep previous values on error
+      console.error("❌ Error fetching vault stats:", error.message || error);
     } finally {
       setIsLoading(false);
     }

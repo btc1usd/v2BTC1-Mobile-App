@@ -30,7 +30,7 @@ export default function RewardsScreen() {
     readProvider,
     disconnectWallet
   } = useWallet();
-  const { distributionCount, timeUntilDistribution, canDistribute, lastDistributionDate } = useDistributionData();
+  const { distributionCount, timeUntilDistribution, canDistribute, lastDistributionDate, refetch: refetchDistributionData } = useDistributionData();
   
   const [claimingDistributionId, setClaimingDistributionId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -177,17 +177,20 @@ export default function RewardsScreen() {
         index: currentClaim.index,
         amount: currentClaim.amount,
         proofLength: currentClaim.proof.length,
+        account: address, // Using original checksum address
       });
       
       // CRITICAL: Wake wallet immediately on user intent
       console.log("🔔 Initiating claim transaction...");
       
       // Call claim with real merkle proof from Supabase
+      // IMPORTANT: amount from Supabase is already in smallest unit (8 decimals)
+      // CRITICAL: Use the original checksum address, not lowercase
       const result = await claimRewards(
         currentClaim.distribution_id,
         currentClaim.index,
-        address,
-        ethers.formatUnits(currentClaim.amount, 8), // Convert to human-readable format
+        address, // Use original checksum address from wallet
+        currentClaim.amount, // Already in Wei-equivalent (smallest unit)
         currentClaim.proof,
         signer
       );
@@ -227,10 +230,14 @@ export default function RewardsScreen() {
       setTimeout(async () => {
         setLastRefreshTime(Date.now()); // Force cache bust
         await onRefresh();
+        // Also refetch distribution data
+        if (refetchDistributionData) {
+          await refetchDistributionData();
+        }
       }, 2000);
       
     } catch (err: any) {
-      console.error('[Claim] Error:', err);
+      console.error('[Claim] Error:', err.message || String(err));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       
       // Graceful error messages
@@ -456,6 +463,31 @@ export default function RewardsScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Claim Confirmation Modal */}
+      {currentClaim && (
+        <TransactionConfirmModal
+          visible={showConfirmModal}
+          title="Confirm Claim"
+          description="Review and confirm your rewards claim"
+          actionText="Claim"
+          amount={ethers.formatUnits(currentClaim.amount, 8)}
+          token="BTC1"
+          network="Base Sepolia"
+          gasEstimate="~0.001 ETH"
+          transactionDetails={[
+            { label: "Distribution", value: `#${currentClaim.distribution_id}` },
+            { label: "Network", value: "Base Sepolia" },
+            { label: "Gas Estimate", value: "~0.001 ETH" },
+            { label: "Date", value: new Date(currentClaim.created_at).toLocaleDateString() },
+            { label: "Action", value: "Claim Rewards", isHighlight: true }
+          ]}
+          onConfirm={confirmClaim}
+          onCancel={cancelClaim}
+          isProcessing={claimingDistributionId === currentClaim.distribution_id}
+          processingMessage="Claiming your rewards..."
+        />
+      )}
 
       {/* Error Modal */}
       <ErrorModal

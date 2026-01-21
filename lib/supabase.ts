@@ -120,6 +120,11 @@ export async function fetchUserUnclaimedRewards(
         
         // Include ALL user claims (we'll verify on-chain)
         if (userClaim) {
+          // Log info if proof is empty (valid for single-leaf trees)
+          if (!userClaim.proof || userClaim.proof.length === 0) {
+            console.log(`[fetchUserUnclaimedRewards] Distribution ${dist.id}: Single-leaf tree (empty proof)`);
+          }
+          
           allUserClaims.push({
             id: dist.id,
             distribution_id: dist.id,

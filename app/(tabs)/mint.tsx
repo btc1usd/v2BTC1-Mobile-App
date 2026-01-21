@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Linking,
   AppState,
+  RefreshControl,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { ethers } from "ethers"; // OPTIMIZATION: Top-level import for instant access
@@ -54,8 +55,16 @@ export default function MintScreen() {
   const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false); 
+  const [refreshing, setRefreshing] = useState(false);
   
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await refetchBalances();
+    setRefreshing(false);
+  };
 
   // Keep loading state visible when app returns from wallet
   useEffect(() => {
@@ -328,6 +337,9 @@ export default function MintScreen() {
             contentContainerStyle={{ paddingBottom: 40 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
           >
             <WalletHeader address={address} chainId={chainId} compact onDisconnect={disconnectWallet} />
           
@@ -526,8 +538,18 @@ export default function MintScreen() {
               title="Confirm Mint"
               description="Review and confirm your mint transaction"
               actionText="Mint"
-              amount={amount}
-              token={selectedToken.symbol}
+              amount={mintOutput.out}
+              token="BTC1"
+              network="Base Sepolia"
+              gasEstimate="~0.001 ETH"
+              transactionDetails={[
+                { label: "Collateral", value: `${amount} ${selectedToken.symbol}` },
+                { label: "Network", value: "Base Sepolia" },
+                { label: "Gas Estimate", value: "~0.001 ETH" },
+                { label: "Mint Price", value: `$${mintOutput.mintPrice}` },
+                { label: "Fees", value: "2% (1% dev + 1% endowment)" },
+                { label: "Action", value: "Mint BTC1" }
+              ]}
               onConfirm={confirmMint}
               onCancel={cancelMint}
               isProcessing={step === "processing"}

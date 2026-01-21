@@ -23,6 +23,7 @@ import { DebugPanel } from "./debug-panel";
 import { WalletHeader } from "./wallet-header";
 import { fetchUserUnclaimedRewards } from "@/lib/supabase";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { getResilientProvider } from "@/lib/rpc-provider-resilient";
 
 export function DashboardScreen() {
   const { address, disconnectWallet } = useWallet();
@@ -47,8 +48,20 @@ export function DashboardScreen() {
 
   // Hooks for real data
   const { balance, formattedBalance, isLoading: isLoadingBalance, refetch: refetchBalance } = useBtc1Balance();
-  const { collateralRatio, totalCollateralValue, btcPrice, isHealthy, isLoading: isLoadingVault } = useVaultStats();
+  const { collateralRatio, totalCollateralValue, btcPrice, isHealthy, isLoading: isLoadingVault, refetch: refetchVaultStats } = useVaultStats();
   const { timeUntilDistribution, isLoading: isLoadingDist } = useDistributionData();
+
+  // Debug logging
+  useEffect(() => {
+    console.log('[Dashboard] Stats:', {
+      collateralRatio,
+      totalCollateralValue,
+      btcPrice,
+      totalSupply,
+      isLoadingVault,
+      isLoadingSupply
+    });
+  }, [collateralRatio, totalCollateralValue, btcPrice, totalSupply, isLoadingVault, isLoadingSupply]);
 
   // Fetch available rewards
   const fetchRewards = async () => {
@@ -91,20 +104,22 @@ export function DashboardScreen() {
   // Fetch total supply
   useEffect(() => {
     const fetchTotalSupply = async () => {
-      const providerToUse = readProvider;
-      if (!providerToUse) return;
+      if (!chainId) return;
 
       try {
         setIsLoadingSupply(true);
+        
+        // Use resilient RPC provider
+        const resilientRPC = getResilientProvider(chainId);
         const btc1Contract = new ethers.Contract(
           CONTRACT_ADDRESSES.BTC1USD,
-          ABIS.BTC1USD,
-          providerToUse
+          ABIS.BTC1USD
         );
-        const supply = await btc1Contract.totalSupply();
-        setTotalSupply(ethers.formatUnits(supply, 8));
-      } catch {
-        // Silent fail
+        
+        const supply = await resilientRPC.call(btc1Contract, 'totalSupply');
+        setTotalSupply(ethers.formatUnits(supply || BigInt(0), 8));
+      } catch (e) {
+        console.error('❌ Error fetching supply:', e);
       } finally {
         setIsLoadingSupply(false);
       }
@@ -116,28 +131,30 @@ export function DashboardScreen() {
   // Fetch collateral balances
   useEffect(() => {
     const fetchCollateralBalances = async () => {
-      const providerToUse = readProvider;
-      if (!providerToUse) return;
+      if (!chainId) return;
 
       try {
         setIsLoadingCollateral(true);
-        // OPTIMIZED: Direct parallel contract calls for speed - no artificial delays
+        
+        // Use resilient RPC provider
+        const resilientRPC = getResilientProvider(chainId);
+        const vaultAddress = CONTRACT_ADDRESSES.VAULT;
 
-        const wbtcContract = new ethers.Contract(CONTRACT_ADDRESSES.WBTC_TOKEN, ABIS.ERC20, providerToUse);
-        const cbBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.CBBTC_TOKEN, ABIS.ERC20, providerToUse);
-        const tBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.TBTC_TOKEN, ABIS.ERC20, providerToUse);
+        const wbtcContract = new ethers.Contract(CONTRACT_ADDRESSES.WBTC_TOKEN, ABIS.ERC20);
+        const cbBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.CBBTC_TOKEN, ABIS.ERC20);
+        const tBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.TBTC_TOKEN, ABIS.ERC20);
 
-        const [wbtc, cbbtc, tbtc] = await Promise.all([
-          wbtcContract.balanceOf(CONTRACT_ADDRESSES.VAULT).catch(() => BigInt(0)),
-          cbBtcContract.balanceOf(CONTRACT_ADDRESSES.VAULT).catch(() => BigInt(0)),
-          tBtcContract.balanceOf(CONTRACT_ADDRESSES.VAULT).catch(() => BigInt(0)),
+        const [wbtc, cbbtc, tbtc] = await resilientRPC.batchCall([
+          { contract: wbtcContract, method: 'balanceOf', params: [vaultAddress] },
+          { contract: cbBtcContract, method: 'balanceOf', params: [vaultAddress] },
+          { contract: tBtcContract, method: 'balanceOf', params: [vaultAddress] },
         ]);
 
-        setWbtcBalance(ethers.formatUnits(wbtc, 8));
-        setCbBtcBalance(ethers.formatUnits(cbbtc, 8));
-        setTBtcBalance(ethers.formatUnits(tbtc, 8));
-      } catch {
-        // Silent fail
+        setWbtcBalance(ethers.formatUnits(wbtc || BigInt(0), 8));
+        setCbBtcBalance(ethers.formatUnits(cbbtc || BigInt(0), 8));
+        setTBtcBalance(ethers.formatUnits(tbtc || BigInt(0), 8));
+      } catch (e) {
+        console.error('❌ Error fetching collateral:', e);
       } finally {
         setIsLoadingCollateral(false);
       }
@@ -150,9 +167,49 @@ export function DashboardScreen() {
     setRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      await refetchBalance();
-    } catch {
-      // Silent fail
+      // Refetch all dashboard data
+      await Promise.all([
+        refetchBalance(),
+        refetchVaultStats(),
+        fetchRewards(),
+      ]);
+      
+      // Also refetch total supply and collateral
+      if (chainId) {
+        const resilientRPC = getResilientProvider(chainId);
+        
+        try {
+          const btc1Contract = new ethers.Contract(
+            CONTRACT_ADDRESSES.BTC1USD,
+            ABIS.BTC1USD
+          );
+          const supply = await resilientRPC.call(btc1Contract, 'totalSupply');
+          setTotalSupply(ethers.formatUnits(supply || BigInt(0), 8));
+        } catch (e) {
+          console.error('Error refetching supply:', e);
+        }
+        
+        try {
+          const vaultAddress = CONTRACT_ADDRESSES.VAULT;
+          const wbtcContract = new ethers.Contract(CONTRACT_ADDRESSES.WBTC_TOKEN, ABIS.ERC20);
+          const cbBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.CBBTC_TOKEN, ABIS.ERC20);
+          const tBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.TBTC_TOKEN, ABIS.ERC20);
+
+          const [wbtc, cbbtc, tbtc] = await resilientRPC.batchCall([
+            { contract: wbtcContract, method: 'balanceOf', params: [vaultAddress] },
+            { contract: cbBtcContract, method: 'balanceOf', params: [vaultAddress] },
+            { contract: tBtcContract, method: 'balanceOf', params: [vaultAddress] },
+          ]);
+          
+          setWbtcBalance(ethers.formatUnits(wbtc || BigInt(0), 8));
+          setCbBtcBalance(ethers.formatUnits(cbbtc || BigInt(0), 8));
+          setTBtcBalance(ethers.formatUnits(tbtc || BigInt(0), 8));
+        } catch (e) {
+          console.error('Error refetching collateral:', e);
+        }
+      }
+    } catch (e) {
+      console.error('Error refreshing dashboard:', e);
     } finally {
       setTimeout(() => setRefreshing(false), 1000);
     }

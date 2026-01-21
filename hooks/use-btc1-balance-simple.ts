@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { useWeb3 } from "@/lib/web3-walletconnect-v2";
 import { CONTRACT_ADDRESSES, ABIS } from "@/lib/shared/contracts";
+import { getResilientProvider } from "@/lib/rpc-provider-resilient";
 
 export function useBtc1Balance() {
   const { readProvider, address, chainId } = useWeb3();
@@ -10,52 +11,28 @@ export function useBtc1Balance() {
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchBalance = async () => {
-    if (!address) {
-      return;
-    }
-    
-    // CRITICAL: ALWAYS use RPC provider for reads - NEVER WalletConnect
-    // This eliminates slow wallet communication for balance checks
-    const providerToUse = readProvider;
-    if (!providerToUse) {
-      console.log('useBtc1Balance - No RPC provider available');
+    if (!address || !chainId) {
       return;
     }
 
     try {
       setIsLoading(true);
       
-      // OPTIMIZED: Direct contract call - no artificial delays for speed
-      // Verify we're on the correct network (Base Sepolia = 84532)
-      const network = await providerToUse.getNetwork();
-      console.log('useBtc1Balance - network chainId:', Number(network.chainId));
-      if (Number(network.chainId) !== 84532) {
-        console.warn(`Wrong network: ${network.chainId}. Expected Base Sepolia (84532)`);
-        setBalance(0);
-        setFormattedBalance("0.00");
-        return;
-      }
+      // Use resilient RPC provider with automatic retry and failover
+      const resilientRPC = getResilientProvider(chainId);
       
       const contract = new ethers.Contract(
         CONTRACT_ADDRESSES.BTC1USD,
-        ABIS.BTC1USD,
-        providerToUse
+        ABIS.BTC1USD
       );
 
-      // Check if contract exists
-      const code = await providerToUse.getCode(CONTRACT_ADDRESSES.BTC1USD);
-      if (code === '0x') {
-        console.warn(`BTC1USD contract not found at ${CONTRACT_ADDRESSES.BTC1USD}`);
-        setBalance(0);
-        setFormattedBalance("0.00");
-        return;
-      }
-
-      const bal = await contract.balanceOf(address);
+      // Resilient call with automatic retry
+      const bal = await resilientRPC.call(contract, 'balanceOf', [address]);
+      
       // BTC1 uses 8 decimals (like Bitcoin)
       const formatted = ethers.formatUnits(bal, 8);
       
-      console.log('useBtc1Balance - Balance fetched:', formatted, 'raw:', bal.toString());
+      console.log('✅ BTC1 Balance:', formatted);
       setBalance(parseFloat(formatted));
       setFormattedBalance(formatted);
     } catch (error: any) {
@@ -64,7 +41,7 @@ export function useBtc1Balance() {
         console.log('Network is changing, will retry on next fetch cycle');
         return;
       }
-      console.error("Error fetching balance:", error.message || error);
+      console.error("❌ Error fetching balance:", error.message || error);
       setBalance(0);
       setFormattedBalance("0.00");
     } finally {
