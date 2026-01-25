@@ -43,8 +43,10 @@ export const SUPPORTED_NETWORKS = {
     },
     rpcUrls: [
       "https://mainnet.base.org",
-      "https://base.blockpi.network/v1/rpc/public",
       "https://base-rpc.publicnode.com",
+      "https://base.llamarpc.com",
+      "https://base.drpc.org",
+      "https://base.meowrpc.com",
     ],
     blockExplorerUrls: ["https://basescan.org"],
     iconUrl: "https://base.org/images/base-logo.svg",
@@ -52,8 +54,8 @@ export const SUPPORTED_NETWORKS = {
   },
 } as const;
 
-// Default network for the app
-export const DEFAULT_NETWORK = SUPPORTED_NETWORKS.BASE_SEPOLIA;
+// Default network for the app - ENFORCED BASE MAINNET ONLY
+export const DEFAULT_NETWORK = SUPPORTED_NETWORKS.BASE_MAINNET;
 export const DEFAULT_CHAIN_ID = DEFAULT_NETWORK.chainId;
 
 // Network validation result
@@ -109,7 +111,7 @@ export async function validateNetwork(
       expectedChainId,
       networkName: networkConfig?.name || `Chain ${currentChainId}`,
       needsSwitch: !isValid && !!networkConfig,
-      error: isValid ? undefined : `Wrong network. Please switch to Base.`,
+      error: isValid ? undefined : `Wrong network. Please switch to Base mainnet (8453).`,
     };
   } catch (error: any) {
     console.error("❌ Network validation error:", error);
@@ -284,8 +286,8 @@ export async function checkNetworkBeforeAction(
 ): Promise<boolean> {
   const validation = await validateNetwork(provider);
 
-  // Accept both Base Sepolia and Base Mainnet
-  const ALLOWED_CHAIN_IDS = [84532, 8453];
+  // Accept only Base Mainnet
+  const ALLOWED_CHAIN_IDS = [8453]; // Base mainnet only
   const isValid = validation.currentChainId !== null && 
                   ALLOWED_CHAIN_IDS.includes(validation.currentChainId);
 
@@ -313,7 +315,7 @@ export function getReadOnlyProvider(chainId: number = DEFAULT_CHAIN_ID): ethers.
 
   if (!network) {
     console.warn(`⚠️ Unknown chainId ${chainId}, using default`);
-    return new ethers.JsonRpcProvider(DEFAULT_NETWORK.rpcUrls[0], DEFAULT_CHAIN_ID);
+    return new ethers.JsonRpcProvider(DEFAULT_NETWORK.rpcUrls[0]);
   }
 
   // Use FallbackProvider for automatic failover
@@ -328,7 +330,7 @@ function createFallbackProvider(rpcUrls: readonly string[], chainId: number): et
   // For now, use the first RPC with fallback logic in hooks
   // ethers.js v6 FallbackProvider requires more complex setup
   // We'll implement retry logic at the hook level instead
-  return new ethers.JsonRpcProvider(rpcUrls[0], chainId);
+  return new ethers.JsonRpcProvider(rpcUrls[0]);
 }
 
 /**

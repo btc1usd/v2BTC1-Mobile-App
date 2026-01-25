@@ -70,6 +70,12 @@ export function useVaultStats() {
       const collateralRatioFromContract = collateralRatioRaw ? BigInt(collateralRatioRaw.toString()) : BigInt(0);
       const isHealthyValue = healthy ?? false;
       
+      // Check if we're using fallback data
+      const usingFallbackData = !totalSupply || !totalCollateralAmountRaw || !collateralRatioRaw || !btcPriceRaw;
+      if (usingFallbackData) {
+        console.log('📋 Some contract calls returned null, using fallback values for missing data');
+      }
+      
       // BTC Price with fallback
       let btcPrice = BigInt(0);
       if (btcPriceRaw) {

@@ -41,8 +41,7 @@ export function NetworkSwitchModal({
     if (!chainId) return "Unknown";
     const chains: Record<number, string> = {
       1: "Ethereum",
-      8453: "Base",
-      84532: "Base Sepolia",
+      8453: "Base Mainnet", // Updated from Base Sepolia
       137: "Polygon",
       42161: "Arbitrum",
     };

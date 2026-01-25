@@ -55,10 +55,13 @@ if (!__DEV__) {
       const str = JSON.stringify(args, (key, value) =>
         typeof value === 'bigint' ? value.toString() : value
       );
-      // Only suppress the noisy relay message errors in dev too
+      // Only suppress the noisy relay message errors and WebView iOS errors in dev too
       if (
         str.includes('onRelayMessage') ||
-        str.includes('failed to process an inbound message')
+        str.includes('failed to process an inbound message') ||
+        str.includes('NSURLErrorDomain') ||
+        str.includes('unsupported URL') ||
+        str.includes('Bridge WebView error')
       ) return;
     } catch (e) {
       // If stringify fails for any reason, allow the log through
@@ -87,6 +90,7 @@ import { client } from "./thirdweb";
 import { ethers6Adapter } from "thirdweb/adapters/ethers6";
 import { DEFAULT_CHAIN_ID, DEFAULT_NETWORK, SUPPORTED_NETWORKS } from "./network-manager";
 import { defineChain } from "thirdweb";
+import { getResilientProvider } from "./rpc-provider-resilient";
 
 /* ============================================================
    TYPES
@@ -123,23 +127,14 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   const rpcUrls = DEFAULT_NETWORK.rpcUrls;
   
   const readProvider = useMemo(() => {
-    const currentRpc = rpcUrls[rpcIndex];
-    console.log(`🔌 Using RPC [${rpcIndex}]: ${currentRpc}`);
+    // Use resilient provider for automatic failover and retry logic
+    const resilientProvider = getResilientProvider(DEFAULT_CHAIN_ID);
+    const provider = resilientProvider.getDirectProvider();
     
-    const provider = new ethers.JsonRpcProvider(currentRpc, DEFAULT_CHAIN_ID);
-    
-    // Add error handler to switch to next RPC on persistent failures
-    provider.on('error', (error) => {
-      console.error(`❌ RPC error on ${currentRpc}:`, error.message);
-      // Switch to next RPC if available
-      if (rpcIndex < rpcUrls.length - 1) {
-        console.log(`🔄 Switching to fallback RPC [${rpcIndex + 1}]`);
-        setRpcIndex(prev => prev + 1);
-      }
-    });
+    console.log(`🔌 Using resilient RPC provider for chain ${DEFAULT_CHAIN_ID}`);
     
     return provider;
-  }, [rpcIndex]);
+  }, []);
 
   // 2. Thirdweb v5 Hooks
   const account = useActiveAccount();

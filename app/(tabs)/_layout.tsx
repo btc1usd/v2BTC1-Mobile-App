@@ -130,6 +130,35 @@ export default function TabLayout() {
           ),
         }}
       />
+
+      <Tabs.Screen
+        name="swap"
+        options={{
+          title: "Swap",
+          tabBarIcon: ({ color, focused }) => (
+            <IconSymbol
+              name="arrow.left.arrow.right"
+              size={focused ? 30 : 26}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="buy"
+        options={{
+          title: "Buy",
+          tabBarIcon: ({ color, focused }) => (
+            <IconSymbol
+              name="plus.circle.fill"
+              size={focused ? 30 : 26}
+              color={color}
+            />
+          ),
+        }}
+      />
+
     </Tabs>
   );
 }

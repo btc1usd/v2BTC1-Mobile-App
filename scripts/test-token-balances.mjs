@@ -235,7 +235,10 @@ async function main() {
   
   // Initialize provider
   log('\n🔌 Connecting to Base Sepolia...', 'cyan');
-  const provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC);
+  const provider = new ethers.JsonRpcProvider(BASE_SEPOLIA_RPC, {
+    name: 'Base Sepolia',
+    chainId: BASE_SEPOLIA_CHAIN_ID,
+  });
   
   // Check network
   const networkOk = await checkNetwork(provider);

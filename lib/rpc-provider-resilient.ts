@@ -23,8 +23,10 @@ const RPC_ENDPOINTS = {
   ],
   BASE_MAINNET: [
     "https://mainnet.base.org",
-    "https://base.blockpi.network/v1/rpc/public",
     "https://base-rpc.publicnode.com",
+    "https://base.llamarpc.com",
+    "https://base.drpc.org",
+    "https://base.meowrpc.com",
   ],
 };
 
@@ -176,7 +178,7 @@ export class ResilientRPCProvider {
     
     this.healthTracker = new RPCHealthTracker(endpoints);
     this.providers = endpoints.map(url => 
-      new ethers.JsonRpcProvider(url, chainId)
+      new ethers.JsonRpcProvider(url)
     );
 
     console.log(`🔌 Initialized ResilientRPC for chain ${chainId} with ${endpoints.length} endpoints`);
@@ -236,7 +238,9 @@ export class ResilientRPCProvider {
         error.code === 'SERVER_ERROR' ||
         error.message?.includes('timeout') ||
         error.message?.includes('missing revert data') ||
-        error.message?.includes('no backend');
+        error.message?.includes('no backend') ||
+        error.message?.includes('failed to bootstrap network detection') ||
+        error.message?.includes('network not detected');
 
       if (isRetryable && attempt < RETRY_CONFIG.maxRetries) {
         // Exponential backoff with jitter
@@ -287,7 +291,17 @@ export class ResilientRPCProvider {
     return Promise.all(
       calls.map(({ contract, method, params = [] }) =>
         this.call(contract, method, params).catch(err => {
-          console.error(`Batch call failed for ${method}:`, err.message);
+          // Suppress common reverts (empty vault, not initialized, etc.)
+          const isCommonRevert = 
+            err.message.includes('no data present') ||
+            err.message.includes('require(false)') ||
+            err.message.includes('execution reverted');
+          
+          if (isCommonRevert) {
+            console.warn(`⚠️ Contract call ${method} returned no data (likely empty state or not initialized)`);
+          } else {
+            console.error(`❌ Batch call failed for ${method}:`, err.message);
+          }
           return null;
         })
       )

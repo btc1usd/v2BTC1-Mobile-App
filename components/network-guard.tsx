@@ -47,7 +47,7 @@ export function NetworkGuard({
       chainId,
       isCorrectNetwork,
       isChecking,
-      expectedChainId: 84532,
+      expectedChainId: 8453, // Base Mainnet
     });
   }, [isConnected, chainId, isCorrectNetwork, isChecking]);
 
@@ -95,7 +95,7 @@ export function NetworkGuard({
             <View className="bg-info/10 border border-info/30 rounded-xl p-3 mb-4 w-full">
               <Text className="text-xs font-bold text-info mb-1">🐛 Debug Info:</Text>
               <Text className="text-xs text-muted">Current Chain ID: {chainId}</Text>
-              <Text className="text-xs text-muted">Expected Chain ID: 84532</Text>
+              <Text className="text-xs text-muted">Expected Chain ID: 8453 (Base Mainnet)</Text>
               <Text className="text-xs text-muted">Is Correct: {isCorrectNetwork ? 'Yes' : 'No'}</Text>
             </View>
           )}

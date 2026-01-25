@@ -538,7 +538,7 @@ export function formatTxHash(hash: string): string {
   return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
 }
 
-export function getTxUrl(hash: string, isTestnet: boolean = true): string {
+export function getTxUrl(hash: string, isTestnet: boolean = false): string {
   const baseUrl = isTestnet ? "https://sepolia.basescan.org" : "https://basescan.org";
   return `${baseUrl}/tx/${hash}`;
 }

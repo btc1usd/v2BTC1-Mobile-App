@@ -1,7 +1,9 @@
-import React from "react";
-import { View, Text, TouchableOpacity, Alert } from "react-native";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useThemeContext } from "@/lib/theme-provider";
+import { setStringAsync } from "expo-clipboard";
+import { MotiView } from "moti";
 
 interface WalletHeaderProps {
   address: string | null;
@@ -12,6 +14,8 @@ interface WalletHeaderProps {
 
 export function WalletHeader({ address, chainId, onDisconnect, compact = false }: WalletHeaderProps) {
   const { colorScheme, setColorScheme } = useThemeContext();
+  const [copied, setCopied] = useState(false);
+  
   const formatAddress = (addr: string) => {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
@@ -21,8 +25,7 @@ export function WalletHeader({ address, chainId, onDisconnect, compact = false }
     
     const chains: Record<number, { name: string; color: string }> = {
       1: { name: "Ethereum", color: "bg-blue-500" },
-      8453: { name: "Base", color: "bg-blue-600" },
-      84532: { name: "Base Sepolia", color: "bg-success" },
+      8453: { name: "Base Mainnet", color: "bg-success" },
       137: { name: "Polygon", color: "bg-purple-500" },
       42161: { name: "Arbitrum", color: "bg-blue-400" },
     };
@@ -32,13 +35,19 @@ export function WalletHeader({ address, chainId, onDisconnect, compact = false }
 
   const handleCopyAddress = async () => {
     if (address) {
-      // Industry standard: Show full address with truncated version
-      Alert.alert(
-        "Wallet Address",
-        `${address}\n\n${formatAddress(address)}`,
-        [{ text: "OK" }]
-      );
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        await setStringAsync(address);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setCopied(true);
+        
+        // Reset copied state after animation
+        setTimeout(() => {
+          setCopied(false);
+        }, 2000);
+      } catch (error) {
+        console.error("Failed to copy address:", error);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
     }
   };
 
@@ -59,7 +68,7 @@ export function WalletHeader({ address, chainId, onDisconnect, compact = false }
   // Compact mode - Beautiful modern design
   if (compact) {
     return (
-      <View className="px-6 pt-4 pb-3">
+      <View className="px-4 pt-2 pb-1">
         <View className="flex-row items-center justify-between">
           {/* Left: Wallet Info with Gradient Background */}
           <TouchableOpacity
@@ -67,21 +76,51 @@ export function WalletHeader({ address, chainId, onDisconnect, compact = false }
             className="flex-1 mr-3"
             activeOpacity={0.7}
           >
-            <View className="bg-gradient-to-r from-primary/10 to-success/10 rounded-2xl px-4 py-3 border border-primary/20">
+            <MotiView
+              animate={{
+                scale: copied ? [1, 1.02, 1] : 1,
+                backgroundColor: copied 
+                  ? (colorScheme === 'dark' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)')
+                  : (colorScheme === 'dark' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)'),
+              }}
+              transition={{ type: 'timing', duration: 300 }}
+              className="rounded-2xl px-4 py-3 border border-primary/20"
+            >
               <View className="flex-row items-center">
                 {/* Avatar with Gradient */}
                 <View className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/60 items-center justify-center mr-3 shadow-lg">
-                  <Text className="text-lg">👤</Text>
+                  <Text className="text-lg">{copied ? "✓" : "👤"}</Text>
                 </View>
                 
                 {/* Address Info */}
                 <View className="flex-1">
                   <Text className="text-sm font-bold text-foreground" numberOfLines={1}>
-                    {formatAddress(address)}
+                    {copied ? "Address Copied!" : formatAddress(address)}
                   </Text>
+                  {copied && (
+                    <MotiView
+                      from={{ opacity: 0, translateY: 5 }}
+                      animate={{ opacity: 1, translateY: 0 }}
+                      transition={{ type: 'timing', duration: 200 }}
+                    >
+                      <Text className="text-xs text-success font-semibold mt-0.5">Tap to copy again</Text>
+                    </MotiView>
+                  )}
                 </View>
+                
+                {/* Copy Icon */}
+                <MotiView
+                  animate={{
+                    scale: copied ? [1, 1.3, 1] : 1,
+                    opacity: copied ? 1 : 0.6,
+                  }}
+                  transition={{ type: 'spring', duration: 400 }}
+                  className="ml-2"
+                >
+                  <Text className="text-xl">{copied ? "✓" : "📋"}</Text>
+                </MotiView>
               </View>
-            </View>
+            </MotiView>
           </TouchableOpacity>
 
           {/* Right: Actions Column */}
@@ -145,18 +184,52 @@ export function WalletHeader({ address, chainId, onDisconnect, compact = false }
           >
             {/* Avatar with Gradient Ring */}
             <View className="relative mr-3">
-              <View className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-success items-center justify-center shadow-lg">
-                <Text className="text-xl">👤</Text>
-              </View>
-              {/* Online Status Indicator */}
-              <View className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-success border-2 border-surface" />
+              <MotiView
+                animate={{
+                  scale: copied ? [1, 1.1, 1] : 1,
+                }}
+                transition={{ type: 'spring', duration: 400 }}
+              >
+                <View className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-success items-center justify-center shadow-lg">
+                  <Text className="text-xl">{copied ? "✓" : "👤"}</Text>
+                </View>
+              </MotiView>
+              {/* Online Status Indicator / Copy Success */}
+              <MotiView
+                animate={{
+                  scale: copied ? [1, 1.3, 1] : 1,
+                  backgroundColor: copied ? '#22c55e' : '#22c55e',
+                }}
+                transition={{ type: 'spring', duration: 300 }}
+                className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-surface"
+              />
             </View>
             
             <View className="flex-1">
-              <Text className="text-xs text-muted font-semibold mb-1 uppercase tracking-wider">Connected Wallet</Text>
-              <Text className="text-base font-bold text-foreground">
-                {formatAddress(address)}
-              </Text>
+              <MotiView
+                animate={{
+                  opacity: copied ? 1 : 0.7,
+                }}
+                transition={{ type: 'timing', duration: 200 }}
+              >
+                <Text className="text-xs text-muted font-semibold mb-1 uppercase tracking-wider">
+                  {copied ? "Copied to Clipboard" : "Connected Wallet"}
+                </Text>
+              </MotiView>
+              <View className="flex-row items-center gap-2">
+                <Text className="text-base font-bold text-foreground">
+                  {formatAddress(address)}
+                </Text>
+                <MotiView
+                  animate={{
+                    scale: copied ? [1, 1.2, 1] : 1,
+                    opacity: copied ? 1 : 0.5,
+                  }}
+                  transition={{ type: 'spring', duration: 400 }}
+                >
+                  <Text className="text-sm">{copied ? "✓" : "📋"}</Text>
+                </MotiView>
+              </View>
             </View>
           </TouchableOpacity>
 

@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet } from "react-native";
+import { MotiView } from "moti";
 import { ScreenContainer } from "./screen-container";
 import { ConnectButton } from "thirdweb/react";
 import { 
@@ -115,32 +116,61 @@ export function LandingScreen() {
               position: 'relative',
               marginBottom: 24,
             }}>
-              {/* Outer Glow */}
-              <View style={{
-                position: 'absolute',
-                width: 200,
-                height: 200,
-                borderRadius: 100,
-                backgroundColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.12)',
-                top: -20,
-                left: -20,
-              }} />
+              {/* Outer Glow - Brighter and more prominent */}
+              <MotiView
+                from={{ opacity: 0.3 }}
+                animate={{ opacity: 0.6 }}
+                transition={{
+                  type: 'timing',
+                  duration: 1500,
+                  loop: true,
+                }}
+                style={{
+                  position: 'absolute',
+                  width: 220,
+                  height: 220,
+                  borderRadius: 110,
+                  backgroundColor: colorScheme === 'dark' ? 'rgba(96, 165, 250, 0.25)' : 'rgba(59, 130, 246, 0.2)',
+                  top: -30,
+                  left: -30,
+                }}
+              />
               
-              {/* Logo Container with Gradient */}
+              {/* Middle Glow Ring */}
+              <MotiView
+                from={{ scale: 1, opacity: 0.5 }}
+                animate={{ scale: 1.1, opacity: 0.8 }}
+                transition={{
+                  type: 'timing',
+                  duration: 2000,
+                  loop: true,
+                }}
+                style={{
+                  position: 'absolute',
+                  width: 200,
+                  height: 200,
+                  borderRadius: 100,
+                  backgroundColor: colorScheme === 'dark' ? 'rgba(96, 165, 250, 0.2)' : 'rgba(59, 130, 246, 0.15)',
+                  top: -20,
+                  left: -20,
+                }}
+              />
+              
+              {/* Logo Container - White background for light/bright effect */}
               <View style={{
                 width: 160,
                 height: 160,
                 borderRadius: 80,
-                backgroundColor: colorScheme === 'dark' ? 'rgba(30, 30, 30, 0.8)' : 'rgba(255, 255, 255, 0.9)',
+                backgroundColor: '#ffffff',
                 justifyContent: 'center',
                 alignItems: 'center',
                 borderWidth: 3,
-                borderColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.2)',
+                borderColor: colorScheme === 'dark' ? 'rgba(96, 165, 250, 0.5)' : 'rgba(59, 130, 246, 0.3)',
                 shadowColor: '#3b82f6',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.3,
-                shadowRadius: 20,
-                elevation: 12,
+                shadowOffset: { width: 0, height: 12 },
+                shadowOpacity: 0.5,
+                shadowRadius: 24,
+                elevation: 16,
               }}>
                 <Image
                   source={require("@/assets/images/icon.png")}
@@ -150,16 +180,16 @@ export function LandingScreen() {
               </View>
             </View>
             
-            {/* Brand Title with Gradient Effect */}
+            {/* Brand Title - BLACK text on white for consistency */}
             <View className="items-center mb-4">
               <Text 
                 className="text-6xl font-black text-center mb-2" 
                 style={{ 
-                  color: colorScheme === 'dark' ? '#ffffff' : '#000000',
+                  color: '#000000',
                   letterSpacing: 2,
-                  textShadowColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.2)',
+                  textShadowColor: colorScheme === 'dark' ? 'rgba(96, 165, 250, 0.4)' : 'rgba(59, 130, 246, 0.3)',
                   textShadowOffset: { width: 0, height: 2 },
-                  textShadowRadius: 8,
+                  textShadowRadius: 10,
                 }}
               >
                 BTC1

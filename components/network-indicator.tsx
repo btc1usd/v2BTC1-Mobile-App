@@ -123,7 +123,7 @@ export function NetworkBanner({ chainId, onSwitchSuccess }: NetworkBannerProps) 
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         "✅ Network Switched",
-        "Successfully switched to Base Sepolia network.",
+        "Successfully switched to Base mainnet.",
         [{ text: "OK" }]
       );
       onSwitchSuccess?.();
@@ -157,7 +157,7 @@ export function NetworkBanner({ chainId, onSwitchSuccess }: NetworkBannerProps) 
 
       <View className="bg-background/50 rounded-2xl p-3 mb-4">
         <Text className="text-sm text-muted text-center">
-          This app requires <Text className="font-bold text-primary">Base Sepolia</Text> network
+          This app requires <Text className="font-bold text-primary">Base mainnet</Text> network
         </Text>
       </View>
 
@@ -175,7 +175,7 @@ export function NetworkBanner({ chainId, onSwitchSuccess }: NetworkBannerProps) 
           </>
         ) : (
           <>
-            <Text className="text-base font-bold text-white mr-2">Switch to Base Sepolia</Text>
+            <Text className="text-base font-bold text-white mr-2">Switch to Base Mainnet</Text>
             <Text className="text-white">→</Text>
           </>
         )}

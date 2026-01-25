@@ -30,7 +30,7 @@ import { TransactionConfirmModal } from "@/components/transaction-confirm-modal"
 // Unified steps since contract-utils handles the flow atomically
 type MintStep = "idle" | "processing" | "success" | "error";
 
-const TARGET_CHAIN_ID = 84532; // Base Sepolia
+const TARGET_CHAIN_ID = 8453; // Base Mainnet
 const TARGET_CHAIN_NAME = "Base Sepolia";
 
 export default function MintScreen() {

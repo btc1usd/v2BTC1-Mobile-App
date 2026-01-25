@@ -51,7 +51,7 @@ export function useNetworkEnforcement({
       return false;
     }
 
-    const ALLOWED_CHAIN_IDS = [84532, 8453];
+    const ALLOWED_CHAIN_IDS = [8453]; // Base mainnet only
     const isValid = chainId !== null && ALLOWED_CHAIN_IDS.includes(chainId);
     
     setIsCorrectNetwork(isValid);
@@ -59,7 +59,7 @@ export function useNetworkEnforcement({
     if (!isValid && chainId !== null) {
       const networkInfo = getNetworkInfo(chainId);
       setNetworkError(
-        `Wrong network: ${networkInfo.name}. Please switch to Base.`
+        `Wrong network: ${networkInfo.name}. Please switch to Base mainnet (8453).`
       );
     } else {
       setNetworkError(null);

@@ -27,7 +27,7 @@ import {
    CONSTANTS
 ============================================================ */
 
-const BASE_CHAIN_ID = DEFAULT_CHAIN_ID; // e.g. 84532
+const BASE_CHAIN_ID = DEFAULT_CHAIN_ID; // 8453 (Base Mainnet)
 const BASE_RPC_URL = DEFAULT_NETWORK.rpcUrls[0];
 const WC_PROJECT_ID = "0471f7c4c7ea7ebc0de0e852cc4aea66";
 
@@ -97,7 +97,10 @@ export function Web3ProviderWithWalletConnect({
 }) {
   /* ---------------- READ PROVIDER (AUTHORITATIVE) ---------------- */
   const readOnlyProvider = useRef(
-    new ethers.JsonRpcProvider(BASE_RPC_URL, BASE_CHAIN_ID)
+    new ethers.JsonRpcProvider(BASE_RPC_URL, {
+      name: DEFAULT_NETWORK.name,
+      chainId: BASE_CHAIN_ID,
+    })
   ).current;
 
   /* ---------------- WRITE PROVIDER ---------------- */

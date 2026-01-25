@@ -34,13 +34,38 @@ const config: ExpoConfig = {
   newArchEnabled: true,
   extra: {
     eas: {
-      projectId: "f51266d9-957e-41b9-98ec-7b153f421315",
+      projectId: "76671c95-a749-4cdc-91c3-4d3b17e7b32e",
     },
   },
+  owner: "btc1",
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
     associatedDomains: [`applinks:${env.appSlug}.app`],
+    infoPlist: {
+      // Enable WebView to load external HTTPS content
+      NSAppTransportSecurity: {
+        NSAllowsArbitraryLoads: false,
+        NSExceptionDomains: {
+          "thirdweb.com": {
+            NSExceptionAllowsInsecureHTTPLoads: false,
+            NSIncludesSubdomains: true,
+            NSExceptionMinimumTLSVersion: "TLSv1.2",
+          },
+        },
+      },
+      // Enable WebView and WalletConnect deep linking
+      LSApplicationQueriesSchemes: [
+        "wc",
+        "walletconnect",
+        "metamask",
+        "trust",
+        "rainbow",
+        "coinbase",
+        "https",
+        "http",
+      ],
+    },
   },
   android: {
     adaptiveIcon: {
