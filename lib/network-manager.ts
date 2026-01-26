@@ -14,8 +14,8 @@ import { Alert } from "react-native";
 // Supported networks configuration
 export const SUPPORTED_NETWORKS = {
   BASE_SEPOLIA: {
-    chainId: 84532,
-    name: "Base Sepolia",
+    chainId: 8453,
+    name: "Base Mainnet",
     shortName: "Base",
     nativeCurrency: {
       name: "Ethereum",

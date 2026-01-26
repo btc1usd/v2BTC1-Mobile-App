@@ -79,7 +79,7 @@ export function NetworkGuard({
           
           <Text className="text-base text-muted text-center mb-6">
             {customMessage || 
-              "This app only works on Base Sepolia network. Please switch networks to continue."}
+              "This app only works on Base Mainnet network. Please switch networks to continue."}
           </Text>
 
           {networkError && (
@@ -111,7 +111,7 @@ export function NetworkGuard({
             } w-full`}
           >
             <Text className="text-white font-bold text-center text-base">
-              {isSwitching ? "Switching Network..." : "Switch to Base Sepolia"}
+              {isSwitching ? "Switching Network..." : "Switch to Base Mainnet"}
             </Text>
           </TouchableOpacity>
 
@@ -156,7 +156,7 @@ export function CompactNetworkGuard({
       </View>
       
       <Text className="text-sm text-muted mb-3">
-        Switch to Base Sepolia to access this feature
+        Switch to Base Mainnet to access this feature
       </Text>
 
       <TouchableOpacity

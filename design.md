@@ -55,7 +55,7 @@ Based on user preference for **JioHotstar coloring**, the app will use a premium
 **Content**:
 - **Header**:
   - Wallet address (truncated) with copy button
-  - Network indicator (Base Sepolia/Mainnet)
+  - Network indicator (Base Mainnet)
   - Settings icon
 - **Portfolio Card**:
   - Total BTC1 balance (large, prominent)
@@ -375,7 +375,7 @@ Stack Navigation
 - State management: React Context + hooks (no Zustand initially)
 - API: Reuse existing Supabase backend from web app
 - Contracts: Same ABIs and addresses as web app
-- Network: Base Sepolia (testnet) and Base Mainnet
+- Network: Base Mainnet
 
 ## Risks & Mitigations
 

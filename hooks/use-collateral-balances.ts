@@ -32,10 +32,10 @@ interface UseCollateralBalancesOptions {
   enabled?: boolean;
 }
 
-const EXPECTED_CHAIN_IDS = [8453, 84532];
+const EXPECTED_CHAIN_IDS = [8453];
 const RETRY_DELAYS = [1000, 2000, 5000];
 const STALE_TIME = 10000;
-const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
+
 
 export function useCollateralBalances({
   userAddress,
@@ -104,13 +104,19 @@ export function useCollateralBalances({
       const resilientRPC = getResilientProvider(chainId);
       const tokenContract = new ethers.Contract(token.address, ABIS.ERC20);
 
-      const [rawBalance, contractDecimals] = await resilientRPC.batchCall([
+      const [rawBalance, contractDecimalsResult] = await resilientRPC.batchCall([
         { contract: tokenContract, method: 'balanceOf', params: [address] },
         { contract: tokenContract, method: 'decimals' },
       ]);
 
-      if (!rawBalance || !contractDecimals) {
-        throw new Error('Failed to fetch balance or decimals');
+      // Handle case where decimals couldn't be fetched
+      let contractDecimals = token.decimals; // fallback to predefined decimals
+      if (contractDecimalsResult !== null && contractDecimalsResult !== undefined) {
+        contractDecimals = contractDecimalsResult;
+      }
+
+      if (!rawBalance) {
+        throw new Error('Failed to fetch balance');
       }
 
       const formatted = ethers.formatUnits(rawBalance, contractDecimals);

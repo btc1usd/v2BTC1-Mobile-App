@@ -17,8 +17,8 @@ export function useWallet() {
     address,
     chainId,
     chain: { 
-      id: chainId || 84532, 
-      name: chainId === 84532 ? "Base Sepolia" : (chainId === 8453 ? "Base Mainnet" : "Unknown") 
+      id: chainId || 8453, 
+      name: chainId === 8453 ? "Base Mainnet" : "Unknown" 
     },
     isConnected,
     isConnecting,

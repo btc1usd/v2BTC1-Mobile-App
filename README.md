@@ -44,7 +44,7 @@ This mobile app is a conversion of the [v2BTC1 web application](https://github.c
 
 ### Backend
 - **Supabase**: Database and real-time subscriptions
-- **Base Network**: Ethereum Layer 2 (Sepolia testnet and Mainnet)
+- **Base Network**: Ethereum Layer 2 (Mainnet)
 
 ## Project Structure
 
@@ -176,7 +176,7 @@ All UI components are rebuilt using React Native primitives:
 
 ## Contract Addresses
 
-### Base Sepolia (Testnet)
+### Base Mainnet
 - **BTC1USD Token**: [See deployment-base-sepolia.json]
 - **Vault**: [See deployment-base-sepolia.json]
 - **Weekly Distribution**: [See deployment-base-sepolia.json]
@@ -300,7 +300,7 @@ Required environment variables:
 
 - `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID`: WalletConnect project ID
 - `EXPO_PUBLIC_BASE_RPC_URL`: Base network RPC URL (optional)
-- `EXPO_PUBLIC_BASE_SEPOLIA_RPC_URL`: Base Sepolia RPC URL (optional)
+- `EXPO_PUBLIC_BASE_MAINNET_RPC_URL`: Base Mainnet RPC URL (optional)
 
 ## Known Limitations
 

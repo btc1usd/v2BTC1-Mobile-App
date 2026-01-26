@@ -9,9 +9,11 @@ import {
 } from "react-native";
 import { ScreenContainer } from "./screen-container";
 import { useWallet } from "@/hooks/use-wallet";
-import { useBtc1Balance } from "@/hooks/use-btc1-balance-simple";
-import { useVaultStats } from "@/hooks/use-vault-stats-simple";
-import { useDistributionData } from "@/hooks/use-distribution-data-simple";
+import { useBtc1Balance } from '@/hooks/use-btc1-balance-simple';
+import { useVaultStats } from '@/hooks/use-vault-stats-simple';
+import { useVaultCollateralBalances } from '@/hooks/use-vault-collateral-balances';
+import { useCollateralBalances } from '@/hooks/use-collateral-balances';
+import { useDistributionData } from '@/hooks/use-distribution-data-simple';
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -36,11 +38,15 @@ export function DashboardScreen() {
   const [totalSupply, setTotalSupply] = useState("0");
   const [isLoadingSupply, setIsLoadingSupply] = useState(false);
 
-  // Collateral balances
-  const [wbtcBalance, setWbtcBalance] = useState("0");
-  const [cbBtcBalance, setCbBtcBalance] = useState("0");
-  const [tBtcBalance, setTBtcBalance] = useState("0");
-  const [isLoadingCollateral, setIsLoadingCollateral] = useState(false);
+  // Use the new vault collateral balances hook
+  const { balances: vaultCollateralBalances, isLoading: isLoadingVaultCollateral, refetch: refetchVaultCollateral } = useVaultCollateralBalances();
+  
+  // Use the user's collateral balances hook
+  const { balances: userCollateralBalances, isLoading: isLoadingUserCollateral, refetch: refetchUserCollateral } = useCollateralBalances({
+    userAddress: address,
+    chainId,
+    enabled: !!address && chainId === 8453
+  });
 
   // Available rewards
   const [availableRewards, setAvailableRewards] = useState("0");
@@ -65,7 +71,7 @@ export function DashboardScreen() {
 
   // Fetch available rewards
   const fetchRewards = async () => {
-    if (!readProvider || !address || chainId !== 84532) {
+    if (!readProvider || !address || chainId !== 8453) {
       return;
     }
     
@@ -128,40 +134,7 @@ export function DashboardScreen() {
     fetchTotalSupply();
   }, [chainId]);
 
-  // Fetch collateral balances
-  useEffect(() => {
-    const fetchCollateralBalances = async () => {
-      if (!chainId) return;
 
-      try {
-        setIsLoadingCollateral(true);
-        
-        // Use resilient RPC provider
-        const resilientRPC = getResilientProvider(chainId);
-        const vaultAddress = CONTRACT_ADDRESSES.VAULT;
-
-        const wbtcContract = new ethers.Contract(CONTRACT_ADDRESSES.WBTC_TOKEN, ABIS.ERC20);
-        const cbBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.CBBTC_TOKEN, ABIS.ERC20);
-        const tBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.TBTC_TOKEN, ABIS.ERC20);
-
-        const [wbtc, cbbtc, tbtc] = await resilientRPC.batchCall([
-          { contract: wbtcContract, method: 'balanceOf', params: [vaultAddress] },
-          { contract: cbBtcContract, method: 'balanceOf', params: [vaultAddress] },
-          { contract: tBtcContract, method: 'balanceOf', params: [vaultAddress] },
-        ]);
-
-        setWbtcBalance(ethers.formatUnits(wbtc || BigInt(0), 8));
-        setCbBtcBalance(ethers.formatUnits(cbbtc || BigInt(0), 8));
-        setTBtcBalance(ethers.formatUnits(tbtc || BigInt(0), 8));
-      } catch (e) {
-        console.error('❌ Error fetching collateral:', e);
-      } finally {
-        setIsLoadingCollateral(false);
-      }
-    };
-
-    fetchCollateralBalances();
-  }, [chainId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -171,10 +144,12 @@ export function DashboardScreen() {
       await Promise.all([
         refetchBalance(),
         refetchVaultStats(),
+        refetchVaultCollateral(),
+        refetchUserCollateral(),
         fetchRewards(),
       ]);
       
-      // Also refetch total supply and collateral
+      // Also refetch total supply
       if (chainId) {
         const resilientRPC = getResilientProvider(chainId);
         
@@ -187,25 +162,6 @@ export function DashboardScreen() {
           setTotalSupply(ethers.formatUnits(supply || BigInt(0), 8));
         } catch (e) {
           console.error('Error refetching supply:', e);
-        }
-        
-        try {
-          const vaultAddress = CONTRACT_ADDRESSES.VAULT;
-          const wbtcContract = new ethers.Contract(CONTRACT_ADDRESSES.WBTC_TOKEN, ABIS.ERC20);
-          const cbBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.CBBTC_TOKEN, ABIS.ERC20);
-          const tBtcContract = new ethers.Contract(CONTRACT_ADDRESSES.TBTC_TOKEN, ABIS.ERC20);
-
-          const [wbtc, cbbtc, tbtc] = await resilientRPC.batchCall([
-            { contract: wbtcContract, method: 'balanceOf', params: [vaultAddress] },
-            { contract: cbBtcContract, method: 'balanceOf', params: [vaultAddress] },
-            { contract: tBtcContract, method: 'balanceOf', params: [vaultAddress] },
-          ]);
-          
-          setWbtcBalance(ethers.formatUnits(wbtc || BigInt(0), 8));
-          setCbBtcBalance(ethers.formatUnits(cbbtc || BigInt(0), 8));
-          setTBtcBalance(ethers.formatUnits(tbtc || BigInt(0), 8));
-        } catch (e) {
-          console.error('Error refetching collateral:', e);
         }
       }
     } catch (e) {
@@ -225,10 +181,10 @@ export function DashboardScreen() {
     router.push(route as any);
   };
 
-  const totalCollateral = parseFloat(wbtcBalance) + parseFloat(cbBtcBalance) + parseFloat(tBtcBalance);
+  const totalCollateral = parseFloat(vaultCollateralBalances['WBTC']?.formatted || '0') + parseFloat(vaultCollateralBalances['cbBTC']?.formatted || '0') + parseFloat(vaultCollateralBalances['tBTC']?.formatted || '0');
   
   // SENIOR FIX: Deterministic TVL calculation with fallback
-  // totalCollateralValue from contract can be 0 or undefined on Base Sepolia
+  // totalCollateralValue from contract can be 0 or undefined on Base Mainnet
   // Fallback: Calculate directly from collateral balances × BTC price
   const calculatedTVL = totalCollateral * btcPrice;
   const tvl = totalCollateralValue > 0 ? totalCollateralValue : calculatedTVL;
@@ -240,6 +196,11 @@ export function DashboardScreen() {
     if (value >= 1000) return `$${(value / 1000).toFixed(2)}K`;
     return `$${value.toFixed(2)}`;
   };
+
+  // Calculate user's total collateral
+  const userTotalCollateral = parseFloat(userCollateralBalances['WBTC']?.formatted || '0') + 
+                             parseFloat(userCollateralBalances['cbBTC']?.formatted || '0') + 
+                             parseFloat(userCollateralBalances['tBTC']?.formatted || '0');
 
   const formatSupply = (supply: string) => {
     const num = parseFloat(supply);
@@ -411,7 +372,7 @@ export function DashboardScreen() {
             <View className="h-px bg-border my-1" />
             <StatRow
               label="Total Value Locked"
-              value={isLoadingVault || isLoadingCollateral ? "..." : formatTVL(tvl)}
+              value={isLoadingVault || isLoadingVaultCollateral ? "..." : formatTVL(tvl)}
             />
             <View className="h-px bg-border my-1" />
             <StatRow
@@ -426,7 +387,7 @@ export function DashboardScreen() {
             />
           </View>
 
-          {/* ───────── COLLATERAL BREAKDOWN ───────── */}
+          {/* ───────── VAULT COLLATERAL BREAKDOWN ───────── */}
           <Text className="text-xs font-medium text-muted uppercase tracking-wide mb-3">
             Vault Collateral
           </Text>
@@ -434,25 +395,55 @@ export function DashboardScreen() {
             <CollateralRow
               symbol="WBTC"
               name="Wrapped Bitcoin"
-              amount={isLoadingCollateral ? "..." : parseFloat(wbtcBalance).toFixed(4)}
+              amount={isLoadingVaultCollateral ? "..." : parseFloat(vaultCollateralBalances['WBTC']?.formatted || '0').toFixed(4)}
               total={totalCollateral}
-              value={parseFloat(wbtcBalance)}
+              value={parseFloat(vaultCollateralBalances['WBTC']?.formatted || '0')}
             />
             <View className="h-px bg-border" />
             <CollateralRow
               symbol="cbBTC"
               name="Coinbase Bitcoin"
-              amount={isLoadingCollateral ? "..." : parseFloat(cbBtcBalance).toFixed(4)}
+              amount={isLoadingVaultCollateral ? "..." : parseFloat(vaultCollateralBalances['cbBTC']?.formatted || '0').toFixed(4)}
               total={totalCollateral}
-              value={parseFloat(cbBtcBalance)}
+              value={parseFloat(vaultCollateralBalances['cbBTC']?.formatted || '0')}
             />
             <View className="h-px bg-border" />
             <CollateralRow
               symbol="tBTC"
               name="Threshold Bitcoin"
-              amount={isLoadingCollateral ? "..." : parseFloat(tBtcBalance).toFixed(4)}
+              amount={isLoadingVaultCollateral ? "..." : parseFloat(vaultCollateralBalances['tBTC']?.formatted || '0').toFixed(4)}
               total={totalCollateral}
-              value={parseFloat(tBtcBalance)}
+              value={parseFloat(vaultCollateralBalances['tBTC']?.formatted || '0')}
+            />
+          </View>
+
+          {/* ───────── YOUR WALLET COLLATERAL ───────── */}
+          <Text className="text-xs font-medium text-muted uppercase tracking-wide mb-3">
+            Your Wallet Collateral
+          </Text>
+          <View className="bg-surface rounded-2xl border border-border overflow-hidden mb-6">
+            <CollateralRow
+              symbol="WBTC"
+              name="Wrapped Bitcoin"
+              amount={isLoadingUserCollateral ? "..." : parseFloat(userCollateralBalances['WBTC']?.formatted || '0').toFixed(4)}
+              total={userTotalCollateral}
+              value={parseFloat(userCollateralBalances['WBTC']?.formatted || '0')}
+            />
+            <View className="h-px bg-border" />
+            <CollateralRow
+              symbol="cbBTC"
+              name="Coinbase Bitcoin"
+              amount={isLoadingUserCollateral ? "..." : parseFloat(userCollateralBalances['cbBTC']?.formatted || '0').toFixed(4)}
+              total={userTotalCollateral}
+              value={parseFloat(userCollateralBalances['cbBTC']?.formatted || '0')}
+            />
+            <View className="h-px bg-border" />
+            <CollateralRow
+              symbol="tBTC"
+              name="Threshold Bitcoin"
+              amount={isLoadingUserCollateral ? "..." : parseFloat(userCollateralBalances['tBTC']?.formatted || '0').toFixed(4)}
+              total={userTotalCollateral}
+              value={parseFloat(userCollateralBalances['tBTC']?.formatted || '0')}
             />
           </View>
 

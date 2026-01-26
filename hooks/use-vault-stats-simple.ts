@@ -101,6 +101,13 @@ export function useVaultStats() {
         totalCollateralValueUSD = (totalCollateralAmount * btcPrice) / DECIMALS_8_BIG;
       }
 
+      // Additional logging for debugging
+      console.log('📊 Vault Collateral Info:', {
+        totalCollateralAmount: totalCollateralAmount.toString(),
+        btcPrice: btcPrice.toString(),
+        totalCollateralValueUSD: totalCollateralValueUSD.toString()
+      });
+
       // Calculate collateral ratio with detailed logging
       let formattedRatio;
       if (collateralRatioFromContract > BigInt(0)) {

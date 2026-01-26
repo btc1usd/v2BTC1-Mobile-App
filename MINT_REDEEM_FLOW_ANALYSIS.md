@@ -27,7 +27,7 @@ function allowance(address owner, address spender) view returns (uint256)
 ```
 **Parameters:**
 - `owner`: User wallet address
-- `spender`: VAULT contract address (`0x5b69Eb051F38D2a2f13F2167738BF0612d7f394A`)
+- `spender`: VAULT contract address (`0x02582d39Ae148Fbdff5F77f24e4BAEE8313B6a25`)
 
 **Returns:** Current allowance amount  
 **Call Location:** `lib/contract-utils.ts:39` - `checkCollateralApproval()`
@@ -41,7 +41,7 @@ function allowance(address owner, address spender) view returns (uint256)
 function approve(address spender, uint256 amount) returns (bool)
 ```
 **Parameters:**
-- `spender`: VAULT contract (`0x5b69Eb051F38D2a2f13F2167738BF0612d7f394A`)
+- `spender`: VAULT contract (`0x02582d39Ae148Fbdff5F77f24e4BAEE8313B6a25`)
 - `amount`: Collateral amount in 8 decimals (e.g., `1.5 BTC` = `150000000`)
 
 **Gas Cost:** ~50,000 gas  
@@ -55,7 +55,7 @@ User → Collateral Token.approve(VAULT, amount) → Emit Approval event
 ---
 
 ### Step 4: Mint BTC1 Tokens
-**Contract:** VAULT (`0x5b69Eb051F38D2a2f13F2167738BF0612d7f394A`)  
+**Contract:** VAULT (`0x02582d39Ae148Fbdff5F77f24e4BAEE8313B6a25`)  
 **Function:** `mint(address collateralToken, uint256 btcAmount)`
 ```solidity
 function mint(address collateralToken, uint256 btcAmount)
@@ -107,7 +107,7 @@ btc1Contract.balanceOf(userAddress)
 ---
 
 ### Step 2: Check BTC1 Approval
-**Contract:** BTC1USD (`0x43Cd5E8A5bdaEa790a23C4a5DcCc0c11E70C9daB`)  
+**Contract:** BTC1USD (`0x9B8fc91C33ecAFE4992A2A8dBA27172328f423a5`)  
 **Function:** `allowance(address owner, address spender)`
 ```solidity
 function allowance(address owner, address spender) view returns (uint256)

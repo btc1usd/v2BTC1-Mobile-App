@@ -53,7 +53,7 @@ export async function fetchUserMerkleProof(
 ): Promise<MerkleClaim | null> {
   try {
     const { data, error } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('*')
       .eq('id', distributionId)
       .single();
@@ -102,7 +102,7 @@ export async function fetchUserUnclaimedRewards(
 ): Promise<MerkleClaim[]> {
   try {
     const { data, error } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('*')
       .order('id', { ascending: false });
 
@@ -231,7 +231,7 @@ export async function fetchUserAllClaims(
 ): Promise<MerkleClaim[]> {
   try {
     const { data, error } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('*')
       .order('id', { ascending: false });
 
@@ -275,7 +275,7 @@ export async function fetchDistribution(
 ): Promise<Distribution | null> {
   try {
     const { data, error } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('*')
       .eq('id', distributionId)  // Use 'id' instead of 'distribution_id' for dev table
       .single();
@@ -300,7 +300,7 @@ export async function fetchDistribution(
 export async function fetchAllDistributions(): Promise<Distribution[]> {
   try {
     const { data, error } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('*')
       .order('id', { ascending: false });  // Use 'id' instead of 'distribution_id'
 
@@ -319,7 +319,7 @@ export async function fetchAllDistributions(): Promise<Distribution[]> {
 export async function fetchCurrentDistribution(): Promise<Distribution | null> {
   try {
     const { data, error } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('*')
       .order('id', { ascending: false })  // Use 'id' instead of 'distribution_id'
       .limit(1)
@@ -379,7 +379,7 @@ export async function markClaimAsClaimed(
     
     // Fetch the current distribution
     const { data: dist, error: fetchError } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('claims')
       .eq('id', distributionId)
       .single();
@@ -400,7 +400,7 @@ export async function markClaimAsClaimed(
 
       // Update the distribution with modified claims
       const { error: updateError } = await supabase
-        .from('merkle_distributions_dev')
+        .from('merkle_distributions_prod')
         .update({ claims })
         .eq('id', distributionId);
 
@@ -425,7 +425,7 @@ export async function markClaimAsClaimed(
 export async function hasUnclaimedRewards(address: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('claims')
       .limit(10); // Check recent distributions
 
@@ -454,7 +454,7 @@ export async function hasUnclaimedRewards(address: string): Promise<boolean> {
 export async function fetchTotalRewardsEarned(address: string): Promise<string> {
   try {
     const { data, error } = await supabase
-      .from('merkle_distributions_dev')
+      .from('merkle_distributions_prod')
       .select('claims')
       .order('id', { ascending: false });
 
@@ -496,7 +496,7 @@ export function subscribeToDistributions(
       {
         event: 'INSERT',
         schema: 'public',
-        table: 'merkle_distributions_dev',  // Use dev table name
+        table: 'merkle_distributions_prod',  // Use dev table name
       },
       (payload: any) => {
         callback(payload.new as Distribution);
@@ -521,7 +521,7 @@ export function subscribeToUserClaims(
       {
         event: '*',
         schema: 'public',
-        table: 'merkle_distributions_dev',  // Use dev table name
+        table: 'merkle_distributions_prod',  // Use dev table name
         filter: `account=eq.${address.toLowerCase()}`,
       },
       (payload: any) => {

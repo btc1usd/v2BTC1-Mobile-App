@@ -1,69 +1,69 @@
 // Contract addresses and ABIs for BTC1USD Protocol
 export const CONTRACT_ADDRESSES = {
-  // Base Sepolia Testnet deployment (Chain ID: 84532)
+  // Base Mainnet deployment (Chain ID: 8453)
   BTC1USD:
     process.env.EXPO_PUBLIC_BTC1USD_CONTRACT ||
-    "0x43Cd5E8A5bdaEa790a23C4a5DcCc0c11E70C9daB",
+    "0x9B8fc91C33ecAFE4992A2A8dBA27172328f423a5",
   BTC1USD_CONTRACT:
     process.env.EXPO_PUBLIC_BTC1USD_CONTRACT ||
-    "0x43Cd5E8A5bdaEa790a23C4a5DcCc0c11E70C9daB",
+    "0x9B8fc91C33ecAFE4992A2A8dBA27172328f423a5",
   VAULT:
     process.env.EXPO_PUBLIC_VAULT_CONTRACT ||
-    "0x5b69Eb051F38D2a2f13F2167738BF0612d7f394A",
+    "0x02582d39Ae148Fbdff5F77f24e4BAEE8313B6a25",
   CHAINLINK_BTC_ORACLE:
     process.env.EXPO_PUBLIC_PRICE_ORACLE_CONTRACT ||
-    "0xEfa2b851dF1382f79318EE41C87D85D17c7fe80d",
+    "0x742C7a310f3337D365Ae7ff49Ae171B99e78a0Fe",
   PRICE_ORACLE_CONTRACT:
     process.env.EXPO_PUBLIC_PRICE_ORACLE_CONTRACT ||
-    "0xEfa2b851dF1382f79318EE41C87D85D17c7fe80d",
+    "0x742C7a310f3337D365Ae7ff49Ae171B99e78a0Fe",
   CHAINLINK_FEED:
     process.env.EXPO_PUBLIC_CHAINLINK_FEED ||
-    "0x0FB99723Aee6f420beAD13e6bBB79b7E6F034298",
+    "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F",
   WEEKLY_DISTRIBUTION:
     process.env.EXPO_PUBLIC_WEEKLY_DISTRIBUTION_CONTRACT ||
     "0xc03a2eB3191999AF651B11DCD81293aBf6e0307c",
   MERKLE_DISTRIBUTOR:
     process.env.EXPO_PUBLIC_MERKLE_DISTRIBUTOR_CONTRACT ||
-    "0xe773A628137f083D47690Bd93f56d13f454Bc7dB",
+    "0x248704c5491081D226Ef8B98730D7f13B7BC7b3A",
   ENDOWMENT_MANAGER:
     process.env.EXPO_PUBLIC_ENDOWMENT_MANAGER_CONTRACT ||
-    "0x5a2680cD90E8445a6570F0794eCA40d3EBb56c87",
+    "0x20EeDB2E62eBB8dcBE7eDA6EE5a5Ba7b47c7cD3E",
   PROTOCOL_GOVERNANCE:
     process.env.EXPO_PUBLIC_PROTOCOL_GOVERNANCE_CONTRACT ||
-    "0xFFc7B39f756BC7d4cffCB9682674a53c687164Bd",
+    "0xbef3628aB72e25A8F5b32eA86F7Da8728be3876D",
   GOVERNANCE_DAO:
     process.env.EXPO_PUBLIC_DAO_CONTRACT ||
-    "0x5e093A03af5ceC22a8031872CeF17565B47a336e",
+    "0x2F8A5F34FEbd639Df6A6F1165Ab21d1335B71d39",
   PROXY_ADMIN:
     process.env.EXPO_PUBLIC_PROXY_ADMIN_CONTRACT ||
     "0xD974Dd0bc02DE60b826B3557bF90aaD3A0AfF5Ec",
 
-  // Wallet Smart Contract addresses (Base Sepolia)
+  // Wallet Smart Contract addresses (Base Mainnet)
   DEV_WALLET:
     process.env.EXPO_PUBLIC_DEV_WALLET_CONTRACT ||
-    "0x6fB4a8eAe1630c8D4706c9E7d6bd34b5E7A11FdF",
+    "0x62D3B45d872DD24cFB5F62E539e8c22068C30CDf",
   ENDOWMENT_WALLET:
     process.env.EXPO_PUBLIC_ENDOWMENT_WALLET_CONTRACT ||
-    "0xaE672C55A3351d3Da161d6c931A1dc4528FDA697",
+    "0x9143c43E48344f89fF7AC318844bd0ae038a2BF6",
   MERKLE_FEE_COLLECTOR:
     process.env.EXPO_PUBLIC_MERKLE_FEE_COLLECTOR_CONTRACT ||
-    "0xa7De5F83880248dCE3958c7ddDBb3f6281a38356",
+    "0x6fF65a3dCe529C47880B4C83322dA43F7F740126",
   MERKLE_DISTRIBUTOR_WALLET:
     process.env.EXPO_PUBLIC_MERKLE_DISTRIBUTOR_CONTRACT ||
     "0x9E58285682023c1058d10D7F77cD7BDB14C1Ec9D",
 
-  // Collateral Token addresses (Base Sepolia Testnet)
+  // Collateral Token addresses (Base Mainnet)
   WBTC_TOKEN:
     process.env.EXPO_PUBLIC_WBTC_TOKEN ||
-    "0x2c8C66119E7C5D71F6E751E95B8Ca8c0987d3a5A",
+    "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c",
   CBBTC_TOKEN:
     process.env.EXPO_PUBLIC_CBBTC_TOKEN ||
-    "0x250Dd63E5f7BDe22359AC7870414dc407e8F17F8",
+    "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
   TBTC_TOKEN:
     process.env.EXPO_PUBLIC_TBTC_TOKEN ||
-    "0x00384dC507697897dF0144ef36da36B54E062e65",
+    "0x236aa50979D5f3De3Bd1Eeb40E81137F22ab794b",
 
-  // Admin wallet address (Base Sepolia)
+  // Admin wallet address (Base Mainnet)
   ADMIN:
     process.env.EXPO_PUBLIC_ADMIN_WALLET ||
     "0xd315dADB86EeE6391C99FB2afae6181BC146216D",
@@ -996,10 +996,10 @@ export const CATEGORY_NAMES = [
 
 // Network configuration
 export const NETWORK_CONFIG = {
-  chainId: Number.parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "84532"),
+  chainId: Number.parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453"),
   chainName: process.env.NEXT_PUBLIC_CHAIN_NAME || "Base Mainnet",
-  rpcUrl: process.env.EXPO_PUBLIC_RPC_URL || "https://sepolia.base.org",
-  blockExplorer: "https://sepolia.basescan.org",
+  rpcUrl: process.env.EXPO_PUBLIC_RPC_URL || "https://mainnet.base.org",
+  blockExplorer: "https://basescan.org",
   nativeCurrency: {
     name: "Ether",
     symbol: "ETH",
@@ -1007,32 +1007,32 @@ export const NETWORK_CONFIG = {
   },
 };
 
-// Collateral token configuration - Base Sepolia Mock Tokens (2025-12-17)
+// Collateral token configuration - Base Mainnet Tokens (2025-12-17)
 export const COLLATERAL_TOKENS = [
   {
     symbol: "WBTC",
-    name: "Wrapped Bitcoin (Mock)",
+    name: "Wrapped Bitcoin",
     address:
       process.env.EXPO_PUBLIC_WBTC_TOKEN ||
-      "0x2c8C66119E7C5D71F6E751E95B8Ca8c0987d3a5A",
+      "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c",
     decimals: 8,
     icon: "/icons/wbtc.svg",
   },
   {
     symbol: "cbBTC",
-    name: "Coinbase Wrapped Bitcoin (Mock)",
+    name: "Coinbase Wrapped Bitcoin",
     address:
       process.env.EXPO_PUBLIC_CBBTC_TOKEN ||
-      "0x250Dd63E5f7BDe22359AC7870414dc407e8F17F8",
+      "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
     decimals: 8,
     icon: "/icons/cbbtc.svg",
   },
   {
     symbol: "tBTC",
-    name: "Threshold Bitcoin (Mock)",
+    name: "Threshold Bitcoin",
     address:
       process.env.EXPO_PUBLIC_TBTC_TOKEN ||
-      "0x00384dC507697897dF0144ef36da36B54E062e65",
+      "0x236aa50979D5f3De3Bd1Eeb40E81137F22ab794b",
     decimals: 8,
     icon: "/icons/tbtc.svg",
   },

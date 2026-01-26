@@ -49,7 +49,7 @@ export default function RewardsScreen() {
   useEffect(() => {
     const fetchRewards = async () => {
       // CRITICAL: Use readProvider for all reads - NEVER WalletConnect
-      if (!readProvider || !address || chainId !== 84532) {
+      if (!readProvider || !address || chainId !== 8453) {
         console.log('[Rewards] Skipping fetch - missing:', { readProvider: !!readProvider, address, chainId });
         return;
       }
@@ -124,7 +124,7 @@ export default function RewardsScreen() {
     setLastRefreshTime(Date.now()); // Force cache bust
     
     // Refetch rewards data from Supabase with on-chain verification
-    if (address && chainId === 84532 && readProvider) {
+    if (address && chainId === 8453 && readProvider) {
       try {
         const [currentDist, unclaimed, earned] = await Promise.all([
           fetchCurrentDistribution(),
@@ -473,11 +473,11 @@ export default function RewardsScreen() {
           actionText="Claim"
           amount={ethers.formatUnits(currentClaim.amount, 8)}
           token="BTC1"
-          network="Base Sepolia"
+          network="Base Mainnet"
           gasEstimate="~0.001 ETH"
           transactionDetails={[
             { label: "Distribution", value: `#${currentClaim.distribution_id}` },
-            { label: "Network", value: "Base Sepolia" },
+            { label: "Network", value: "Base Mainnet" },
             { label: "Gas Estimate", value: "~0.001 ETH" },
             { label: "Date", value: new Date(currentClaim.created_at).toLocaleDateString() },
             { label: "Action", value: "Claim Rewards", isHighlight: true }

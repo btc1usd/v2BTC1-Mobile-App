@@ -174,7 +174,7 @@ export class ResilientRPCProvider {
   constructor(private chainId: number) {
     const endpoints = chainId === 84532 
       ? RPC_ENDPOINTS.BASE_SEPOLIA 
-      : RPC_ENDPOINTS.BASE_MAINNET;
+      : RPC_ENDPOINTS.BASE_MAINNET; // Default to Base Mainnet for all non-Sepolia chains
     
     this.healthTracker = new RPCHealthTracker(endpoints);
     this.providers = endpoints.map(url => 
@@ -295,14 +295,23 @@ export class ResilientRPCProvider {
           const isCommonRevert = 
             err.message.includes('no data present') ||
             err.message.includes('require(false)') ||
-            err.message.includes('execution reverted');
+            err.message.includes('execution reverted') ||
+            err.message.includes('could not decode result data') ||
+            err.message.includes('BAD_DATA') ||
+            err.message.includes('0x');
           
           if (isCommonRevert) {
             console.warn(`⚠️ Contract call ${method} returned no data (likely empty state or not initialized)`);
+            // Return a default value for specific methods that commonly fail
+            if (method === 'decimals') {
+              // Default to 18 decimals for most tokens if the call fails
+              return 18;
+            }
+            return null;
           } else {
             console.error(`❌ Batch call failed for ${method}:`, err.message);
+            return null;
           }
-          return null;
         })
       )
     );

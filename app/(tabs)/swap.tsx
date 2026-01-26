@@ -10,6 +10,7 @@ import {
   SafeAreaView,
   Alert,
   Image,
+  RefreshControl,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { ethers } from "ethers";
@@ -27,15 +28,11 @@ import { getResilientProvider } from "@/lib/rpc-provider-resilient";
 // ============================================================
 
 const FALLBACK_CHAINS = [
-  { id: 8453, name: "Base", icon: "🔵" },
-  { id: 84532, name: "Base Sepolia", icon: "🟢" },
+  { id: 8453, name: "Base Mainnet", icon: "🔵" },
   { id: 1, name: "Ethereum", icon: "⟠" },
 ];
 
 const STATIC_TOKENS: Record<number, Token[]> = {
-  84532: [
-    { symbol: "BTC1", name: "BTC1 USD", address: "0x43Cd5E8A5bdaEa790a23C4a5DcCc0c11E70C9daB", decimals: 8, icon: "₿" },
-  ],
   8453: [
     { symbol: "BTC1", name: "BTC1 USD", address: "0x9B8fc91C33ecAFE4992A2A8dBA27172328f423a5", decimals: 8, icon: "./assets/tokens/btc1.png" },
   ],
@@ -82,8 +79,8 @@ export default function SwapScreen() {
   
   const [fromChain, setFromChain] = useState<Chain>(FALLBACK_CHAINS[0]);
   const [toChain, setToChain] = useState<Chain>(FALLBACK_CHAINS[0]);
-  const [fromToken, setFromToken] = useState<Token>(STATIC_TOKENS[8453]?.[0] || STATIC_TOKENS[84532]?.[0] || DEFAULT_TOKENS[0]);
-  const [toToken, setToToken] = useState<Token>(STATIC_TOKENS[8453]?.[0] || STATIC_TOKENS[84532]?.[0] || DEFAULT_TOKENS[0]);
+  const [fromToken, setFromToken] = useState<Token>(STATIC_TOKENS[8453]?.[0] || DEFAULT_TOKENS[0]);
+  const [toToken, setToToken] = useState<Token>(STATIC_TOKENS[8453]?.[0] || DEFAULT_TOKENS[0]);
   const [amount, setAmount] = useState("");
   const [isSwapping, setIsSwapping] = useState(false);
   const [quote, setQuote] = useState<any>(null);
@@ -93,6 +90,7 @@ export default function SwapScreen() {
   const [fromTokenBalance, setFromTokenBalance] = useState<string>("0");
   const [toTokenBalance, setToTokenBalance] = useState<string>("0");
   const [isFetchingBalances, setIsFetchingBalances] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Selection Modals State
   const [networkSelectorVisible, setNetworkSelectorVisible] = useState(false);
@@ -375,7 +373,7 @@ export default function SwapScreen() {
   useEffect(() => {
     let isCancelled = false; // Prevent state updates on unmounted component
     
-    const fetchTokenBalances = async () => {
+    const fetchBalances = async () => {
       if (!address || !isConnected) {
         setFromTokenBalance("0");
         setToTokenBalance("0");
@@ -413,13 +411,48 @@ export default function SwapScreen() {
       }
     };
     
-    fetchTokenBalances();
+    fetchBalances();
     
     // Cleanup function
     return () => {
       isCancelled = true;
     };
   }, [address, isConnected, fromToken, toToken, fromChain, toChain]);
+
+  // Standalone fetchTokenBalances function for refresh control
+  const fetchTokenBalances = async () => {
+    if (!address || !isConnected) {
+      setFromTokenBalance("0");
+      setToTokenBalance("0");
+      return;
+    }
+    
+    setIsFetchingBalances(true);
+    
+    try {
+      // Fetch from token balance
+      if (fromToken) {
+        console.log(`Fetching balance for fromToken: ${fromToken.symbol} at ${fromToken.address} on chain ${fromChain.id}`);
+        const fromBalance = await getTokenBalance(address, fromToken.address, fromChain.id);
+        setFromTokenBalance(fromBalance);
+        console.log(`From token balance: ${fromBalance}`);
+      }
+      
+      // Fetch to token balance
+      if (toToken) {
+        console.log(`Fetching balance for toToken: ${toToken.symbol} at ${toToken.address} on chain ${toChain.id}`);
+        const toBalance = await getTokenBalance(address, toToken.address, toChain.id);
+        setToTokenBalance(toBalance);
+        console.log(`To token balance: ${toBalance}`);
+      }
+    } catch (error) {
+      console.error("Error fetching token balances:", error);
+      setFromTokenBalance("0");
+      setToTokenBalance("0");
+    } finally {
+      setIsFetchingBalances(false);
+    }
+  };
 
   // Fetch Quote Debounce
   useEffect(() => {
@@ -588,6 +621,28 @@ export default function SwapScreen() {
       }
     } finally {
       setIsFetchingQuote(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      // Refresh token balances
+      if (isConnected && address) {
+        await fetchTokenBalances();
+      }
+      
+      // Refresh quote if there's an amount entered
+      if (amount && parseFloat(amount) > 0) {
+        await fetchQuote();
+      }
+      
+      // Add a small delay to show the refresh indicator
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error('Refresh error:', error);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -848,7 +903,7 @@ export default function SwapScreen() {
         <NetworkBanner chainId={chainId} />
       </View>
 
-      <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false}>
+      <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
         <View className="py-4">
           <Text className="text-3xl font-bold text-foreground mb-1">Swap</Text>
           <Text className="text-sm text-muted mb-6">Cross-chain swaps made simple</Text>
@@ -884,9 +939,15 @@ export default function SwapScreen() {
                 className="flex-1 bg-background/80 px-4 py-3.5 rounded-2xl border border-border/50 flex-row items-center justify-between shadow-sm"
               >
                 <View className="flex-row items-center">
-                  <View className="w-5 h-5 rounded-full bg-surface items-center justify-center mr-2 border border-border/20">
-                    <Text className="text-xs">{fromToken.icon}</Text>
-                  </View>
+                  {fromToken.icon && (fromToken.icon.startsWith('http') || fromToken.icon.startsWith('data:image')) ? (
+                    <Image source={{ uri: fromToken.icon }} style={{ width: 20, height: 20, borderRadius: 10, marginRight: 8 }} />
+                  ) : fromToken.icon && (fromToken.icon.startsWith('./') || fromToken.icon.startsWith('/')) ? (
+                    <Image source={require('../../assets/images/icon.png')} style={{ width: 20, height: 20, borderRadius: 10, marginRight: 8 }} />
+                  ) : (
+                    <View className="w-5 h-5 rounded-full bg-surface items-center justify-center mr-2 border border-border/20">
+                      <Text className="text-xs">{fromToken.icon || fromToken.symbol[0]}</Text>
+                    </View>
+                  )}
                   <Text className="text-xs font-black text-foreground uppercase tracking-tight">{fromToken.symbol}</Text>
                 </View>
                 <IconSymbol name="chevron.down" size={10} color={colors.muted} />
@@ -969,9 +1030,15 @@ export default function SwapScreen() {
                 className="flex-1 bg-background/80 px-4 py-3.5 rounded-2xl border border-border/50 flex-row items-center justify-between shadow-sm"
               >
                 <View className="flex-row items-center">
-                  <View className="w-5 h-5 rounded-full bg-surface items-center justify-center mr-2 border border-border/20">
-                    <Text className="text-xs">{toToken.icon}</Text>
-                  </View>
+                  {toToken.icon && (toToken.icon.startsWith('http') || toToken.icon.startsWith('data:image')) ? (
+                    <Image source={{ uri: toToken.icon }} style={{ width: 20, height: 20, borderRadius: 10, marginRight: 8 }} />
+                  ) : toToken.icon && (toToken.icon.startsWith('./') || toToken.icon.startsWith('/')) ? (
+                    <Image source={require('../../assets/images/icon.png')} style={{ width: 20, height: 20, borderRadius: 10, marginRight: 8 }} />
+                  ) : (
+                    <View className="w-5 h-5 rounded-full bg-surface items-center justify-center mr-2 border border-border/20">
+                      <Text className="text-xs">{toToken.icon || toToken.symbol[0]}</Text>
+                    </View>
+                  )}
                   <Text className="text-xs font-black text-foreground uppercase tracking-tight">{toToken.symbol}</Text>
                 </View>
                 <IconSymbol name="chevron.down" size={10} color={colors.muted} />
@@ -1021,14 +1088,14 @@ export default function SwapScreen() {
             onPress={handleSwap}
             disabled={isSwapping || !amount || Number(amount) <= 0}
             className={`mt-6 py-4 rounded-2xl items-center justify-center shadow-lg ${
-              isSwapping || !amount || Number(amount) <= 0 ? "bg-muted opacity-50" : "bg-primary"
+              isSwapping || !amount || Number(amount) <= 0 ? "bg-muted/50" : "bg-primary"
             }`}
           >
             {isSwapping ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text className="text-white text-lg font-black uppercase tracking-widest">
-                {isConnected ? "Swap" : "Connect Wallet"}
+              <Text className="text-white text-lg font-black">
+                Swap
               </Text>
             )}
           </TouchableOpacity>
@@ -1053,27 +1120,27 @@ export default function SwapScreen() {
         transparent={false}
         onRequestClose={() => setNetworkSelectorVisible(false)}
       >
-        <SafeAreaView className="flex-1 bg-[#0a0a0a]">
-          <View className="px-6 py-6 flex-row justify-between items-center border-b border-white/5">
+        <SafeAreaView className="flex-1 bg-background">
+          <View className="px-6 py-6 flex-row justify-between items-center border-b border-border/10">
             <View>
-              <Text className="text-2xl font-black text-white tracking-tight">Select Network</Text>
-              <Text className="text-[11px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">Choose source network</Text>
+              <Text className="text-2xl font-black text-foreground tracking-tight">Select Network</Text>
+              <Text className="text-[11px] text-muted font-bold uppercase tracking-widest mt-0.5">Choose source network</Text>
             </View>
             <TouchableOpacity 
               onPress={() => setNetworkSelectorVisible(false)} 
-              className="w-10 h-10 rounded-2xl bg-white/5 items-center justify-center border border-white/10"
+              className="w-10 h-10 rounded-2xl bg-muted/10 items-center justify-center border border-border/20"
             >
-              <IconSymbol name="xmark" size={18} color="white" />
+              <IconSymbol name="xmark" size={18} color={colors.foreground} />
             </TouchableOpacity>
           </View>
 
           <View className="px-6 py-5">
-            <View className="bg-white/5 rounded-2xl px-5 py-4 flex-row items-center border border-white/10 shadow-inner">
-              <IconSymbol name="magnifyingglass" size={18} color="#666" />
+            <View className="bg-muted/10 rounded-2xl px-5 py-4 flex-row items-center border border-border/20 shadow-inner">
+              <IconSymbol name="magnifyingglass" size={18} color={colors.muted} />
               <TextInput 
                 placeholder="Search networks"
-                placeholderTextColor="#444"
-                className="flex-1 ml-4 text-white font-black text-base h-8"
+                placeholderTextColor={colors.muted}
+                className="flex-1 ml-4 text-foreground font-black text-base h-8"
                 value={chainSearchQuery}
                 onChangeText={setChainSearchQuery}
                 autoCapitalize="none"
@@ -1087,7 +1154,7 @@ export default function SwapScreen() {
                 <TouchableOpacity 
                   key={chain.id}
                   onPress={() => handleSelectChain(chain)}
-                  className={`w-[48%] bg-white/5 p-5 rounded-[32px] items-center justify-center border-2 ${
+                  className={`w-[48%] bg-muted/10 p-5 rounded-[32px] items-center justify-center border-2 ${
                     (selectingSide === 'from' ? fromChain.id : toChain.id) === chain.id 
                     ? 'border-primary bg-primary/10' 
                     : 'border-transparent'
@@ -1096,7 +1163,7 @@ export default function SwapScreen() {
                   <View className="w-14 h-14 rounded-2xl bg-white/5 items-center justify-center mb-3 shadow-sm border border-white/10">
                     <Image source={{ uri: chain.icon }} style={{ width: 32, height: 32, borderRadius: 8 }} />
                   </View>
-                  <Text numberOfLines={1} className="text-white font-black text-xs uppercase tracking-tight">
+                  <Text numberOfLines={1} className="text-foreground font-black text-xs uppercase tracking-tight">
                     {chain.name.replace(' Mainnet', '')}
                   </Text>
                 </TouchableOpacity>
@@ -1113,29 +1180,29 @@ export default function SwapScreen() {
         transparent={false}
         onRequestClose={() => setTokenSelectorVisible(false)}
       >
-        <SafeAreaView className="flex-1 bg-[#050505]">
-          <View className="px-6 py-6 flex-row justify-between items-center border-b border-white/5 bg-[#0a0a0a]">
+        <SafeAreaView className="flex-1 bg-background">
+          <View className="px-6 py-6 flex-row justify-between items-center border-b border-border/10 bg-surface">
             <View>
-              <Text className="text-2xl font-black text-white tracking-tight">Select Token</Text>
-              <Text className="text-[11px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">
+              <Text className="text-2xl font-black text-foreground tracking-tight">Select Token</Text>
+              <Text className="text-[11px] text-muted font-bold uppercase tracking-widest mt-0.5">
                 On {supportedChains.find(c => c.id === selectedChainIdForTokenModal)?.name}
               </Text>
             </View>
             <TouchableOpacity 
               onPress={() => setTokenSelectorVisible(false)} 
-              className="w-10 h-10 rounded-2xl bg-white/5 items-center justify-center border border-white/10"
+              className="w-10 h-10 rounded-2xl bg-muted/10 items-center justify-center border border-border/20"
             >
-              <IconSymbol name="xmark" size={18} color="white" />
+              <IconSymbol name="xmark" size={18} color={colors.foreground} />
             </TouchableOpacity>
           </View>
 
-          <View className="px-6 py-5 bg-[#0a0a0a] border-b border-white/5">
-            <View className="bg-white/5 rounded-2xl px-5 py-4 flex-row items-center border border-white/10 shadow-inner">
-              <IconSymbol name="magnifyingglass" size={18} color="#666" />
+          <View className="px-6 py-5 bg-surface border-b border-border/10">
+            <View className="bg-muted/10 rounded-2xl px-5 py-4 flex-row items-center border border-border/20 shadow-inner">
+              <IconSymbol name="magnifyingglass" size={18} color={colors.muted} />
               <TextInput 
                 placeholder="Search name or paste address"
-                placeholderTextColor="#444"
-                className="flex-1 ml-4 text-white font-black text-base h-8"
+                placeholderTextColor={colors.muted}
+                className="flex-1 ml-4 text-foreground font-black text-base h-8"
                 value={tokenSearchQuery}
                 onChangeText={setTokenSearchQuery}
                 autoCapitalize="none"
@@ -1149,27 +1216,29 @@ export default function SwapScreen() {
               {/* SUGGESTED SECTION */}
               {!tokenSearchQuery && (
                 <View className="mb-6 px-2">
-                  <Text className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-3">Suggested</Text>
+                  <Text className="text-[10px] font-black text-muted uppercase tracking-widest mb-3">Suggested</Text>
                   <View className="flex-row flex-wrap gap-2">
                      {tokensForSelectedChain.slice(0, 4).map(token => (
                        <TouchableOpacity 
                          key={`suggested-${token.symbol}`}
                          onPress={() => handleSelectToken(token)}
-                         className="bg-white/5 px-3 py-2 rounded-xl border border-white/10 flex-row items-center"
+                         className="bg-muted/10 px-3 py-2 rounded-xl border border-border/20 flex-row items-center"
                        >
-                         {token.icon ? (
+                         {token.icon && (token.icon.startsWith('http') || token.icon.startsWith('data:image')) ? (
                             <Image source={{ uri: token.icon }} style={{ width: 16, height: 16, borderRadius: 8, marginRight: 6 }} />
+                         ) : token.icon && (token.icon.startsWith('./') || token.icon.startsWith('/')) ? (
+                            <Image source={require('../../assets/images/icon.png')} style={{ width: 16, height: 16, borderRadius: 8, marginRight: 6 }} />
                          ) : (
                             <Text className="mr-2 text-xs">{token.symbol[0]}</Text>
                          )}
-                         <Text className="text-white font-bold text-xs">{token.symbol}</Text>
+                         <Text className="text-foreground font-bold text-xs">{token.symbol}</Text>
                        </TouchableOpacity>
                      ))}
                   </View>
                 </View>
               )}
 
-              <Text className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-3 px-2">All Assets</Text>
+              <Text className="text-[10px] font-black text-muted uppercase tracking-widest mb-3 px-2">All Assets</Text>
               <View className="gap-1">
                 {tokensForSelectedChain.map(token => {
                   const isSelected = (selectingSide === 'from' ? fromToken.symbol : toToken.symbol) === token.symbol;
@@ -1178,12 +1247,14 @@ export default function SwapScreen() {
                     <TouchableOpacity
                       key={`${selectedChainIdForTokenModal}-${token.address}-${token.symbol}`}
                       onPress={() => handleSelectToken(token)}
-                      className={`px-4 py-4 rounded-3xl flex-row items-center justify-between border ${isSelected ? 'bg-primary/10 border-primary/30' : 'bg-white/5 border-white/5'}`}
+                      className={`px-4 py-4 rounded-3xl flex-row items-center justify-between border ${isSelected ? 'bg-primary/10 border-primary/30' : 'bg-muted/10 border-border/20'}`}
                     >
                       <View className="flex-row items-center flex-1">
-                        <View className="w-12 h-12 rounded-2xl bg-white/5 items-center justify-center mr-4 border border-white/10">
-                          {token.icon ? (
+                        <View className="w-12 h-12 rounded-2xl bg-muted/10 items-center justify-center mr-4 border border-border/20">
+                          {token.icon && (token.icon.startsWith('http') || token.icon.startsWith('data:image')) ? (
                             <Image source={{ uri: token.icon }} style={{ width: 32, height: 32, borderRadius: 10 }} />
+                          ) : token.icon && (token.icon.startsWith('./') || token.icon.startsWith('/')) ? (
+                            <Image source={require('../../assets/images/icon.png')} style={{ width: 32, height: 32, borderRadius: 10 }} />
                           ) : (
                             <View className="w-8 h-8 rounded-full bg-primary/20 items-center justify-center">
                               <Text className="text-primary font-black text-sm">{token.symbol[0]}</Text>
@@ -1192,14 +1263,14 @@ export default function SwapScreen() {
                         </View>
                         <View className="flex-1">
                           <View className="flex-row items-center">
-                            <Text className="text-white font-black text-lg tracking-tight mr-2">{token.symbol}</Text>
+                            <Text className="text-foreground font-black text-lg tracking-tight mr-2">{token.symbol}</Text>
                             {token.symbol === "BTC1" && (
                               <View className="bg-primary/20 px-1.5 py-0.5 rounded-md border border-primary/30">
                                 <Text className="text-primary text-[8px] font-black uppercase">Featured</Text>
                               </View>
                             )}
                           </View>
-                          <Text numberOfLines={1} className="text-[11px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">{token.name}</Text>
+                          <Text numberOfLines={1} className="text-[11px] text-muted font-bold uppercase tracking-widest mt-0.5">{token.name}</Text>
                         </View>
                       </View>
                       <View className="flex-row items-center">
@@ -1208,7 +1279,7 @@ export default function SwapScreen() {
                             <IconSymbol name="checkmark.circle.fill" size={24} color={colors.primary} />
                           </View>
                         )}
-                        <IconSymbol name="chevron.right" size={14} color="#333" />
+                        <IconSymbol name="chevron.right" size={14} color={colors.muted} />
                       </View>
                     </TouchableOpacity>
                   );

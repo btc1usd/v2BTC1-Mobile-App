@@ -13,7 +13,7 @@ export function useWallet() {
   return {
     address,
     isConnected,
-    chain: { id: chainId || 84532, name: "Base Sepolia" },
+    chain: { id: chainId || 8453, name: "Base Mainnet" },
     error,
     disconnectWallet,
     signer,

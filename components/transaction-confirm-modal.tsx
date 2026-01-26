@@ -35,7 +35,7 @@ export function TransactionConfirmModal({
   onCancel,
   isProcessing = false,
   processingMessage = "Processing transaction...",
-  network = "Base Sepolia",
+  network = "Base Mainnet",
   gasEstimate = "~0.001 ETH",
   transactionDetails,
 }: TransactionConfirmModalProps) {

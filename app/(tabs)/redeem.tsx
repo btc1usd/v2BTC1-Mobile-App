@@ -225,7 +225,7 @@ export default function RedeemScreen() {
           <Text className="text-base text-muted text-center mb-2">You received ~{redeemOutput.net} {selectedToken.symbol}</Text>
           {txHash && (
             <TouchableOpacity
-              onPress={() => Linking.openURL(getTxUrl(txHash, chainId === 84532))}
+              onPress={() => Linking.openURL(getTxUrl(txHash, chainId === 84532))} // Note: this function checks if chainId is 84532 (Base Sepolia) to determine if it's testnet
               className="mt-4 bg-primary/10 px-6 py-3 rounded-full"
             >
               <Text className="text-primary font-semibold">View Transaction →</Text>
@@ -416,7 +416,7 @@ export default function RedeemScreen() {
               <View className="h-px bg-border my-1" />
               <View className="flex-row justify-between items-center py-2">
                 <Text className="text-sm text-muted">Network</Text>
-                <Text className="text-sm font-semibold text-success">Base Sepolia</Text>
+                <Text className="text-sm font-semibold text-success">Base Mainnet</Text>
               </View>
             </View>
 
@@ -456,11 +456,11 @@ export default function RedeemScreen() {
             actionText="Redeem"
             amount={redeemOutput.net}
             token={selectedToken.symbol}
-            network="Base Sepolia"
+            network="Base Mainnet"
             gasEstimate="~0.001 ETH"
             transactionDetails={[
               { label: "BTC1 Amount", value: `${amount} BTC1` },
-              { label: "Network", value: "Base Sepolia" },
+              { label: "Network", value: "Base Mainnet" },
               { label: "Gas Estimate", value: "~0.001 ETH" },
               { label: "Redeem Type", value: redeemOutput.type === 'stable' ? 'STABLE' : 'STRESS' },
               { label: "Dev Fee", value: "0.1%" },

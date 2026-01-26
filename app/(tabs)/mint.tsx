@@ -31,7 +31,7 @@ import { TransactionConfirmModal } from "@/components/transaction-confirm-modal"
 type MintStep = "idle" | "processing" | "success" | "error";
 
 const TARGET_CHAIN_ID = 8453; // Base Mainnet
-const TARGET_CHAIN_NAME = "Base Sepolia";
+const TARGET_CHAIN_NAME = "Base Mainnet";
 
 export default function MintScreen() {
   const {
@@ -249,7 +249,7 @@ export default function MintScreen() {
           <Text className="text-base text-muted text-center mb-2">You received ~{mintOutput.out} BTC1</Text>
           {txHash && (
             <TouchableOpacity
-              onPress={() => Linking.openURL(getTxUrl(txHash, chainId === 84532))}
+              onPress={() => Linking.openURL(getTxUrl(txHash, chainId === 84532))} // Note: this function checks if chainId is 84532 (Base Sepolia) to determine if it's testnet
               className="mt-4 bg-primary/10 px-6 py-3 rounded-full"
             >
               <Text className="text-primary font-semibold">View Transaction →</Text>
@@ -540,11 +540,11 @@ export default function MintScreen() {
               actionText="Mint"
               amount={mintOutput.out}
               token="BTC1"
-              network="Base Sepolia"
+              network="Base Mainnet"
               gasEstimate="~0.001 ETH"
               transactionDetails={[
                 { label: "Collateral", value: `${amount} ${selectedToken.symbol}` },
-                { label: "Network", value: "Base Sepolia" },
+                { label: "Network", value: "Base Mainnet" },
                 { label: "Gas Estimate", value: "~0.001 ETH" },
                 { label: "Mint Price", value: `$${mintOutput.mintPrice}` },
                 { label: "Fees", value: "2% (1% dev + 1% endowment)" },
