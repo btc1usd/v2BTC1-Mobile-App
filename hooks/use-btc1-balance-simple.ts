@@ -29,8 +29,11 @@ export function useBtc1Balance() {
       // Resilient call with automatic retry
       const bal = await resilientRPC.call(contract, 'balanceOf', [address]);
       
+      // Handle case where bal might be null (shouldn't happen after fix but good to be safe)
+      const balanceValue = bal !== null ? bal : BigInt(0);
+      
       // BTC1 uses 8 decimals (like Bitcoin)
-      const formatted = ethers.formatUnits(bal, 8);
+      const formatted = ethers.formatUnits(balanceValue, 8);
       
       console.log('✅ BTC1 Balance:', formatted);
       setBalance(parseFloat(formatted));

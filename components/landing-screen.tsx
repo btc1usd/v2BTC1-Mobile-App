@@ -110,11 +110,11 @@ export function LandingScreen() {
           </View>
 
           {/* Hero Section with Premium Logo */}
-          <View className="items-center mt-12 mb-10">
+          <View className="items-center mt-12 mb-12">
             {/* Animated Glow Effect Background */}
             <View style={{
               position: 'relative',
-              marginBottom: 24,
+              marginBottom: 38,
             }}>
               {/* Outer Glow - Brighter and more prominent */}
               <MotiView
@@ -183,22 +183,22 @@ export function LandingScreen() {
             {/* Brand Title - BLACK text on white for consistency */}
             <View className="items-center mb-4">
               <Text 
-                className="text-6xl font-black text-center mb-2" 
+                className="text-6xl font-black text-center mb-8" 
                 style={{ 
                   color: '#000000',
                   letterSpacing: 2,
                   textShadowColor: colorScheme === 'dark' ? 'rgba(96, 165, 250, 0.4)' : 'rgba(59, 130, 246, 0.3)',
-                  textShadowOffset: { width: 0, height: 2 },
+                  textShadowOffset: { width: 0, height: 4 },
                   textShadowRadius: 10,
                 }}
               >
-                BTC1
+                BTC1USD
               </Text>
               
               {/* Subtitle Badge */}
               <View style={{
                 backgroundColor: colorScheme === 'dark' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.1)',
-                paddingHorizontal: 20,
+                paddingHorizontal: 40,
                 paddingVertical: 8,
                 borderRadius: 20,
                 borderWidth: 1,
@@ -214,7 +214,7 @@ export function LandingScreen() {
               </View>
               
               {/* Beautiful Tagline */}
-              <View className="px-4 mb-4">
+              <View className="px-4 mb-6">
                 <Text 
                   className="text-lg font-bold text-center leading-7" 
                   style={{ 
@@ -263,7 +263,7 @@ export function LandingScreen() {
           </View>
 
           {/* Premium CTA Button */}
-          <View className="px-2 mb-16">
+          <View className="px-2 mb-86">
             <View style={{
               borderRadius: 28,
               overflow: 'hidden',
@@ -307,7 +307,7 @@ export function LandingScreen() {
           </View>
 
           {/* Premium Feature Cards */}
-          <View className="gap-5 mb-8">
+          <View className="gap-5 mb-4">
             {features.map((feature, index) => (
               <View 
                 key={index}
@@ -361,7 +361,7 @@ export function LandingScreen() {
 
           {/* Premium Footer */}
           <View className="mt-6 items-center pb-4">
-            <View className="flex-row items-center mb-3">
+            <View className="flex-row items-center mb-1">
               <View style={{
                 width: 40,
                 height: 1,

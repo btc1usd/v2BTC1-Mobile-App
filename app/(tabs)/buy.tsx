@@ -768,7 +768,13 @@ export default function BuyScreen() {
                 className="flex-1 bg-background/80 px-4 py-3.5 rounded-2xl border border-border/50 flex-row items-center justify-between shadow-sm"
               >
                 <View className="flex-row items-center">
-                  {toToken.icon && (toToken.icon.startsWith('http') || toToken.icon.startsWith('data:image')) ? (
+                  {toToken.symbol === 'BTC1' ? (
+                    // Use BTC1 specific icon handling
+                    <Image 
+                      source={require('../../assets/images/icon.png')} 
+                      style={{ width: 20, height: 20, borderRadius: 10, marginRight: 8 }} 
+                    />
+                  ) : toToken.icon && (toToken.icon.startsWith('http') || toToken.icon.startsWith('data:image')) ? (
                     <Image source={{ uri: toToken.icon }} style={{ width: 20, height: 20, borderRadius: 10, marginRight: 8 }} />
                   ) : toToken.icon && (toToken.icon.startsWith('./') || toToken.icon.startsWith('/')) ? (
                     <Image source={require('../../assets/images/icon.png')} style={{ width: 20, height: 20, borderRadius: 10, marginRight: 8 }} />

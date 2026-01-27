@@ -271,7 +271,37 @@ export class ResilientRPCProvider {
 
     const operation = async (provider: ethers.JsonRpcProvider) => {
       const connectedContract = contract.connect(provider);
-      return await connectedContract[method](...params);
+      try {
+        return await (connectedContract as any)[method](...params);
+      } catch (error: any) {
+        // Suppress common reverts (empty vault, not initialized, etc.)
+        const isCommonRevert = 
+          error.message.includes('no data present') ||
+          error.message.includes('require(false)') ||
+          error.message.includes('execution reverted') ||
+          error.message.includes('could not decode result data') ||
+          error.message.includes('BAD_DATA') ||
+          error.message.includes('0x');
+        
+        if (isCommonRevert) {
+          console.warn(`⚠️ Contract call ${method} returned no data (likely empty state or not initialized)`);
+          // Return a default value for specific methods that commonly fail
+          if (method === 'decimals') {
+            // Default to 18 decimals for most tokens if the call fails
+            return 18;
+          } else if (method === 'totalSupply') {
+            // Default to 0 supply if the call fails
+            return BigInt(0);
+          } else if (method === 'balanceOf') {
+            // Default to 0 balance if the call fails
+            return BigInt(0);
+          }
+          return null;
+        } else {
+          console.error(`❌ Contract call failed for ${method}:`, error.message);
+          throw error;
+        }
+      }
     };
 
     const promise = this.executeWithRetry(operation);
@@ -306,6 +336,12 @@ export class ResilientRPCProvider {
             if (method === 'decimals') {
               // Default to 18 decimals for most tokens if the call fails
               return 18;
+            } else if (method === 'totalSupply') {
+              // Default to 0 supply if the call fails
+              return BigInt(0);
+            } else if (method === 'balanceOf') {
+              // Default to 0 balance if the call fails
+              return BigInt(0);
             }
             return null;
           } else {

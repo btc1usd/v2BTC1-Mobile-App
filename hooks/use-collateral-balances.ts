@@ -115,7 +115,7 @@ export function useCollateralBalances({
         contractDecimals = contractDecimalsResult;
       }
 
-      if (!rawBalance) {
+      if (rawBalance === null || rawBalance === undefined) {
         throw new Error('Failed to fetch balance');
       }
 
